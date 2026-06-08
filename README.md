@@ -1,4 +1,4 @@
-# Pods — Scoped Semantic Memory Server
+# Pods
 
 Cross-platform MCP memory server for AI agents.
 Organize knowledge by project, session, and category.

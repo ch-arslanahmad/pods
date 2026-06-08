@@ -70,5 +70,5 @@ MCP-native memory server for AI agents. Organize knowledge by project, session, 
 
 ### Branch Protection
 
-This repository is owned by **ch-arslanahmad**. Only the owner pushes to `main`.
-All contributions go through PRs with review.
+`main` branch is protected — direct pushes are rejected by GitHub.
+**Always create a PR**, even for your own changes. The owner can bypass in emergencies.
