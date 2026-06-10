@@ -40,7 +40,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS pods_fts USING fts5(
     pod_name, content,
     content='pods',
     content_rowid='id'
-);"""
+);
+
+-- update the updated_at column to current timestamp when existing row is updated
+CREATE TRIGGER IF NOT EXISTS set_pods_timestamp 
+AFTER UPDATE ON pods
+BEGIN
+    UPDATE pods SET updated_at = datetime('now', 'localtime')
+    WHERE id = NEW.id;
+END;
+
+"""
 
 
     cursor.executescript(create_db_query) # execute the query
