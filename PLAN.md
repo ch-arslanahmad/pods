@@ -20,10 +20,10 @@ A scoped semantic memory system I actually use daily with my AI tools. Not a pro
 
 **Schema:**
 ```
-pods: id, pod_name, category, data (JSON), associations (JSON),
-      created_by (JSON), visibility, metadata (JSON),
+pods: id, pod_name, content (JSON), project_id, category,
       created_at, updated_at, deleted_at
-pods_fts: FTS5 on pod_name, category, data
+pod_tags: pod_id, tag (composite PK)
+pods_fts: FTS5 on pod_name, content
 ```
 
 **Usage:**

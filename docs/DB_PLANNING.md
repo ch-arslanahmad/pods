@@ -10,48 +10,53 @@ throughout — only the backend changes.
 
 **Storage:** SQLite with JSON text columns + FTS5
 
-- Pod data model (pod_name, category, data, associations, visibility, metadata, provenance)
-- Associations as JSON text: `{"projects":[],"sessions":[],"categories":[]}`
-- FTS5 virtual table for keyword search
+- Pod data model (pod_name, content, category, project_id, tags)
+- Tags normalized into a separate `pod_tags` table
+- Single `project_id` TEXT column (not JSON associations)
+- FTS5 virtual table for keyword search on pod_name + content
 - Full-text + structured filter hybrid search (no vectors yet)
-- Per-user `.db` files (existing multi-user model)
+- Single-user by default (`.db` file per deployment)
 - No new dependencies beyond Python stdlib
+
+> [!note]
+> Currently single-user only (no `user_id` column). The schema is intentionally
+> minimal for local testing. Multi-user support (via `user_id`, `visibility`,
+> `associations` JSON, provenance) will be added in a later iteration.
 
 ```sql
 CREATE TABLE pods (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL DEFAULT 'default',
-    pod_name TEXT NOT NULL,
-    category TEXT NOT NULL DEFAULT 'general',
-    data TEXT NOT NULL DEFAULT '{}',
-    tags TEXT DEFAULT '',
-    embedding BLOB,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    deleted_at TEXT,
-    created_by_type TEXT NOT NULL DEFAULT 'user',
-    created_by_name TEXT NOT NULL DEFAULT 'default',
-    associations TEXT NOT NULL DEFAULT '{"projects":[],"sessions":[],"categories":[]}',
-    visibility TEXT NOT NULL DEFAULT 'private',
-    metadata TEXT NOT NULL DEFAULT '{}'
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    pod_name    TEXT NOT NULL,
+    content     TEXT NOT NULL DEFAULT '{}',
+    project_id  TEXT,
+    category    TEXT NOT NULL DEFAULT 'general',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    deleted_at  TEXT
 );
 
-CREATE INDEX idx_pods_user ON pods(user_id);
+CREATE TABLE pod_tags (
+    pod_id  INTEGER NOT NULL REFERENCES pods(id),
+    tag     TEXT NOT NULL,
+    PRIMARY KEY (pod_id, tag)
+);
+
 CREATE INDEX idx_pods_category ON pods(category);
-CREATE INDEX idx_pods_visibility ON pods(visibility);
+CREATE INDEX idx_pods_project  ON pods(project_id);
 
 CREATE VIRTUAL TABLE pods_fts USING fts5(
-    pod_name, data, tags,
+    pod_name, content,
     content='pods',
     content_rowid='id'
 );
 ```
 
-**Capabilities:** Full pod CRUD, scoped search by category/project/session,
-keyword search, visibility filtering, provenance tracking.
+**Capabilities:** Full pod CRUD, scoped search by category/project,
+keyword search, tag-based filtering.
 
-**Limitations:** No semantic/vector search. No concurrent multi-writer.
-No RLS (but per-user files work fine for single-user/team).
+**Limitations:** No session-based filtering. No visibility scoping.
+No provenance tracking. No multi-user. No semantic/vector search.
+No concurrent multi-writer. Single-user local use only.
 
 ---
 
