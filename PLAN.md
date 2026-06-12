@@ -6,7 +6,9 @@ A scoped semantic memory system I actually use daily with my AI tools. Not a pro
 
 ## Stage 1 — Local
 
-**Success metric:** I use this daily from Claude web and OpenCode on my laptop.
+**Status:** Pending. Testing remains with Claude Web + OpenCode.
+
+**Success metric:** It works seemlessly between Claude web and OpenCode on my laptop.
 
 **What it is:** A single Python MCP server with SQLite. stdio mode for local tools, HTTP mode for Claude web.
 
@@ -18,22 +20,63 @@ A scoped semantic memory system I actually use daily with my AI tools. Not a pro
 - `pods_delete` — soft delete
 - `pods_list_categories` — distinct categories
 
-**Schema:**
-```
-pods: id, pod_name, content (JSON), project_id, category,
-      created_at, updated_at, deleted_at
-pod_tags: pod_id, tag (composite PK)
-pods_fts: FTS5 on pod_name, content
-```
+**Schema:** See `db/schema.sql` for exact DDL.
 
-**Usage:**
+### Server
+
 ```bash
-# stdio (OpenCode, Claude Desktop, Cursor)
-python server.py
+# stdio mode (OpenCode, Claude Desktop, Cursor)
+.venv/bin/python server.py
 
-# HTTP (Claude web)
-python server.py --http
+# HTTP mode (Claude Web via ngrok)
+.venv/bin/python server.py --http
 ```
+
+### OpenCode (stdio)
+
+OpenCode connects directly via stdio — no network needed.
+
+**Config** — in OpenCode's MCP settings:
+```json
+{
+  "mcpServers": {
+    "pods": {
+      "command": ".venv/bin/python",
+      "args": ["server.py"],
+      "cwd": "/absolute/path/to/pods"
+    }
+  }
+}
+```
+
+Tools auto-discover on launch. Use naturally: "save this as a pod", "search my pods for..."
+
+### Claude Web (HTTP + ngrok)
+
+Requires a public URL. ngrok provides one via your permanent dev domain.
+
+**1. Start the server:**
+```bash
+.venv/bin/python server.py --http
+```
+Listens on `0.0.0.0:8000`.
+
+**2. Expose with ngrok:**
+```bash
+ngrok http 8000 --url=<domain>
+```
+MCP endpoint: `https://<domain>/sse`
+
+**3. Add connector in Claude Web:**
+
+- **Settings > Connectors > Add Connector**
+- Name: `pods`
+- Server URL: `https://<domain>/sse`
+- Save
+
+Tools discover automatically. The interstitial page (due to using ngrok free tier) only appears in browsers, MCP protocol connections bypass it entirely.
+
+**TODO:** Add migration support — rebuilding the DB should preserve existing pods instead of destroying them.
 
 ## Stage 2 — Hosted (Next)
 

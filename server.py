@@ -4,12 +4,12 @@ from mcp.server.fastmcp import FastMCP
 
 from db import db_operations as db
 
-mcp = FastMCP("pods")
+mcp = FastMCP("pods", host="0.0.0.0")  # 0.0.0.0 required for ngrok tunnel — 127.0.0.1 triggers DNS rebinding protection that blocks ngrok's Host header
 
 
 @mcp.tool()
-def pods_add(pod_name: str, content: str, category: str, project_id: str | None = None) -> int:
-    return db.create_pod(pod_name, content, project_id, category)
+def pods_add(pod_name: str, content: str, category: str, project: str | None = None) -> int:
+    return db.create_pod(pod_name, content, project, category)
 
 
 @mcp.tool()
@@ -22,10 +22,10 @@ def pods_update(
     pod_id: int,
     pod_name: str | None = None,
     content: str | None = None,
-    project_id: str | None = None,
+    project: str | None = None,
     category: str | None = None,
 ) -> dict | None:
-    return db.update_pod(pod_id, pod_name, content, project_id, category)
+    return db.update_pod(pod_id, pod_name, content, project, category)
 
 
 @mcp.tool()
@@ -34,13 +34,36 @@ def pods_delete(pod_id: int) -> bool:
 
 
 @mcp.tool()
-def pods_search(query: str) -> list[dict]:
-    return db.search_pods(query)
+def pods_search(query: str, project: str | None = None) -> list[dict]:
+    return db.search_pods(query, project)
 
 
 @mcp.tool()
 def pods_list_categories() -> list[str]:
     return db.list_categories()
+
+
+@mcp.tool()
+def pods_list_projects() -> list[str]:
+    return db.list_projects()
+
+
+@mcp.tool()
+def pods_ping() -> str:
+    return "pong"
+
+
+@mcp.prompt()
+def pods_project_context(project: str) -> str:
+    pods = db.list_pods(project=project)
+    if not pods:
+        return f"No pods found for project '{project}'."
+
+    lines = [f"Project context: {project}", f"Total pods: {len(pods)}", ""]
+    for p in pods:
+        lines.append(f"[{p['category']}] {p['pod_name']}: {p['content']}")
+
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

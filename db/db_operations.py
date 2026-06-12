@@ -11,10 +11,10 @@ CREATE TABLE IF NOT EXISTS pods (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     pod_name    TEXT NOT NULL,
     content     TEXT NOT NULL DEFAULT '{}',   -- one JSON bag, not two
-    project_id  TEXT,                          -- NULL = standalone
+    project  TEXT,                          -- NULL = standalone
     category    TEXT NOT NULL DEFAULT 'general',
     created_at  TEXT NOT NULL DEFAULT (strftime('%d-%m-%Y,%H:%M:%S', 'now')),
-    updated_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%d-%m-%Y,%H:%M:%S', 'now')),
     deleted_at  TEXT                           -- soft delete
 );
 
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS pod_tags (
 );
 
 CREATE INDEX IF NOT EXISTS Iidx_pods_category ON pods(category);
-CREATE INDEX IF NOT EXISTS idx_pods_project  ON pods(project_id);
+CREATE INDEX IF NOT EXISTS idx_pods_project  ON pods(project);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS pods_fts USING fts5(
     pod_name, content,
@@ -34,29 +34,43 @@ CREATE VIRTUAL TABLE IF NOT EXISTS pods_fts USING fts5(
 );
 
 -- Triggers to keep the updated_at column updated automatically
-CREATE TRIGGER IF NOT EXISTS update_pods_timestamp 
+CREATE TRIGGER IF NOT EXISTS set_pods_timestamp 
 AFTER UPDATE ON pods
 BEGIN
     UPDATE pods SET updated_at = datetime('now', 'localtime')
     WHERE id = NEW.id;
 END;
 
+CREATE TRIGGER IF NOT EXISTS pods_fts_ai AFTER INSERT ON pods BEGIN
+    INSERT INTO pods_fts(rowid, pod_name, content) VALUES (new.id, new.pod_name, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS pods_fts_ad AFTER DELETE ON pods BEGIN
+    INSERT INTO pods_fts(pods_fts, rowid, pod_name, content) VALUES ('delete', old.id, old.pod_name, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS pods_fts_au AFTER UPDATE ON pods BEGIN
+    INSERT INTO pods_fts(pods_fts, rowid, pod_name, content) VALUES ('delete', old.id, old.pod_name, old.content);
+    INSERT INTO pods_fts(rowid, pod_name, content) VALUES (new.id, new.pod_name, new.content);
+END;
+
 """
 
 
     cursor.executescript(create_db_query) # execute the query
+    cursor.execute("INSERT INTO pods_fts(pods_fts) VALUES('rebuild')") # populate FTS index from existing data
     conn.commit() # commit the changes to the db
     conn.close() # close the connection
 
 
-def create_pod(pod_name: str, content: str, project_id: str | None, category: str) -> int:
+def create_pod(pod_name: str, content: str, project: str | None, category: str) -> int:
     conn = db.get_connection()
     cursor = conn.cursor()
 
     cursor.execute(""" 
-        INSERT INTO pods (pod_name, content, project_id, category)
+        INSERT INTO pods (pod_name, content, project, category)
         VALUES (?, ?, ?, ?)
-    """, (pod_name, content, project_id, category))
+    """, (pod_name, content, project, category))
     # timestamps handled by DB triggers
 
     conn.commit()
@@ -79,7 +93,7 @@ def get_pod(pod_id: int) -> dict | None:
         return None
 
 
-def list_pods(category: str | None = None, project_id: str | None = None) -> list[dict]:
+def list_pods(category: str | None = None, project: str | None = None) -> list[dict]:
     conn = db.get_connection()
     cursor = conn.cursor()
 
@@ -89,9 +103,9 @@ def list_pods(category: str | None = None, project_id: str | None = None) -> lis
     if category:
         sql += " AND category = ?"
         params.append(category)
-    if project_id:
-        sql += " AND project_id = ?"
-        params.append(project_id)
+    if project:
+        sql += " AND project = ?"
+        params.append(project)
 
     sql += " ORDER BY created_at DESC" # sort by newest first
 
@@ -102,9 +116,9 @@ def list_pods(category: str | None = None, project_id: str | None = None) -> lis
 
 
 def update_pod(pod_id: int, pod_name: str | None = None, content: str | None = None,
-               project_id: str | None = None, category: str | None = None) -> dict | None:
+               project: str | None = None, category: str | None = None) -> dict | None:
     
-    if not any([pod_name, content, project_id, category]):
+    if not any([pod_name, content, project, category]):
         print(f"Nothing to update for pod_id {pod_id}");
         return None # nothing to update
 
@@ -120,9 +134,9 @@ def update_pod(pod_id: int, pod_name: str | None = None, content: str | None = N
     if content is not None:
         fields.append("content = ?")
         params.append(content)
-    if project_id is not None:
-        fields.append("project_id = ?")
-        params.append(project_id)
+    if project is not None:
+        fields.append("project = ?")
+        params.append(project)
     if category is not None:
         fields.append("category = ?")
         params.append(category)
@@ -163,16 +177,34 @@ def list_categories() -> list[str]:
     return results
 
 
-def search_pods(query: str) -> list[dict]:
+def list_projects() -> list[str]:
+    conn = db.get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT DISTINCT project FROM pods WHERE deleted_at IS NULL AND project IS NOT NULL ORDER BY project")
+    rows = cursor.fetchall()
+    conn.close()
+
+    results = [r["project"] for r in rows]
+
+    return results
+
+
+def search_pods(query: str, project: str | None = None) -> list[dict]:
     conn = db.get_connection()
     cursor = conn.cursor()
 
     search_sql = """SELECT p.* FROM pods p 
 JOIN pods_fts fts ON p.id = fts.ROWID
-WHERE pods_fts MATCH ? -- it matches the value
-AND p.deleted_at IS NULL -- not deleted"""
+WHERE pods_fts MATCH ?
+AND p.deleted_at IS NULL"""
+    params: list = [query]
 
-    cursor.execute(search_sql, (query,))
+    if project:
+        search_sql += " AND p.project = ?"
+        params.append(project)
+
+    cursor.execute(search_sql, params)
     rows = cursor.fetchall()
     conn.close()
     results : list[dict] = [dict(r) for r in rows]

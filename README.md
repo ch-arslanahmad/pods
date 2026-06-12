@@ -19,7 +19,7 @@ Organize knowledge by project, session, and category.
 
 | Stage | Status | Description |
 |-------|--------|-------------|
-| 1 — Local | Building | MCP server, SQLite, usable from laptop |
+| 1 — Local | Done | MCP server, SQLite, works with Claude Web + OpenCode |
 | 2 — Hosted | Next | Same server on a public URL, always-on |
 
 See `PLAN.md` for the full plan and `docs/` for the north-star vision.

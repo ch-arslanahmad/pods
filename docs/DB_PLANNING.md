@@ -10,9 +10,9 @@ throughout — only the backend changes.
 
 **Storage:** SQLite with JSON text columns + FTS5
 
-- Pod data model (pod_name, content, category, project_id, tags)
+- Pod data model (pod_name, content, category, project, tags)
 - Tags normalized into a separate `pod_tags` table
-- Single `project_id` TEXT column (not JSON associations)
+- Single `project` TEXT column (not JSON associations)
 - FTS5 virtual table for keyword search on pod_name + content
 - Full-text + structured filter hybrid search (no vectors yet)
 - Single-user by default (`.db` file per deployment)
@@ -28,7 +28,7 @@ CREATE TABLE pods (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     pod_name    TEXT NOT NULL,
     content     TEXT NOT NULL DEFAULT '{}',
-    project_id  TEXT,
+    project  TEXT,
     category    TEXT NOT NULL DEFAULT 'general',
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
@@ -42,7 +42,7 @@ CREATE TABLE pod_tags (
 );
 
 CREATE INDEX idx_pods_category ON pods(category);
-CREATE INDEX idx_pods_project  ON pods(project_id);
+CREATE INDEX idx_pods_project  ON pods(project);
 
 CREATE VIRTUAL TABLE pods_fts USING fts5(
     pod_name, content,
