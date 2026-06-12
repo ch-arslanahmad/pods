@@ -22,61 +22,13 @@ A scoped semantic memory system I actually use daily with my AI tools. Not a pro
 
 **Schema:** See `db/schema.sql` for exact DDL.
 
-### Server
+### Setup
 
-```bash
-# stdio mode (OpenCode, Claude Desktop, Cursor)
-.venv/bin/python server.py
+See [`docs/deployment.md`](./docs/deployment.md) for setup instructions — running the server, OpenCode config, Claude Web via ngrok, and deployment options.
 
-# HTTP mode (Claude Web via ngrok)
-.venv/bin/python server.py --http
-```
-
-### OpenCode (stdio)
-
-OpenCode connects directly via stdio — no network needed.
-
-**Config** — in OpenCode's MCP settings:
-```json
-{
-  "mcpServers": {
-    "pods": {
-      "command": ".venv/bin/python",
-      "args": ["server.py"],
-      "cwd": "/absolute/path/to/pods"
-    }
-  }
-}
-```
-
-Tools auto-discover on launch. Use naturally: "save this as a pod", "search my pods for..."
-
-### Claude Web (HTTP + ngrok)
-
-Requires a public URL. ngrok provides one via your permanent dev domain.
-
-**1. Start the server:**
-```bash
-.venv/bin/python server.py --http
-```
-Listens on `0.0.0.0:8000`.
-
-**2. Expose with ngrok:**
-```bash
-ngrok http 8000 --url=<domain>
-```
-MCP endpoint: `https://<domain>/sse`
-
-**3. Add connector in Claude Web:**
-
-- **Settings > Connectors > Add Connector**
-- Name: `pods`
-- Server URL: `https://<domain>/sse`
-- Save
-
-Tools discover automatically. The interstitial page (due to using ngrok free tier) only appears in browsers, MCP protocol connections bypass it entirely.
-
-**TODO:** Add migration support — rebuilding the DB should preserve existing pods instead of destroying them.
+**TODOs:**
+- Add migration support — rebuilding the DB should preserve existing pods instead of destroying them
+- Test with OpenCode (currently testing only with Claude Web)
 
 ## Stage 2 — Hosted (Next)
 
@@ -84,10 +36,11 @@ Tools discover automatically. The interstitial page (due to using ngrok free tie
 
 **What it is:** Same server, deployed with a public URL. Same tools, same DB (SQLite for now), just always-on.
 
-**Deploy options:** VPS (Hetzner) or Cloudflare Tunnel.
+**Deploy options:** See [`docs/deployment.md`](./docs/deployment.md).
 
 **Docs:**
 - `docs/pods.md` — full product spec for the ideal system
+- `docs/deployment.md` — setup and deployment guide
 - `docs/DB_PLANNING.md` — Postgres/vector architecture
 - (internal docs) — competitive analysis, Capsule Hub research, doobidoo research
 

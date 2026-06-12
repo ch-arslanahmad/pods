@@ -57,9 +57,9 @@ Current implementation targets Phase 1. See `DB_PLANNING.md` for full details.
 
 ```
                     ┌────────────────────┐
-                    │   Any MCP Client    │
-                    │  (OpenCode, Claude, │
-                    │   Cursor, etc.)     │
+                    │   Any MCP Client   │
+                    │  (OpenCode, Claude,│
+                    │   Cursor, etc.)    │
                     └────────┬───────────┘
                              │ MCP (stdio/HTTP)
                     ┌────────▼───────────┐
@@ -183,6 +183,45 @@ Extraction presets: summarize, bulletize, action-items, metadata-extract, custom
 - Sessions = ephemeral context (short-lived). Projects = persistent artifacts.
 - Filtering: queries filter by category, project, session, created_by, visibility.
 
+There are 3 ways to filter pods,
+- category, to categorize pods, self-explanatory
+- project, a project-related pods, context, info about the project.
+- sessions, a set of pods created within a persistant session.
+~~?: search across the data (semantic)~~
+
+### Sessions
+
+A session, pods created within a single AI conversation. For example, a session
+`"session_abc123"`, which tells:
+- place where a series of pods are created
+- a series of related pods generated.
+- where generated & who generated & when
+
+They are optional, but quity handy if implemented, allows seemlessness with context management. However are needed for filtering.
+
+For example, i had a conversation with OpenCode on something, in which pods were created.
+
+Later i want to see/use those pods within that conversation only, without sessions, i cannot do that. 
+And after it i talk to Claude then ChatGPT on seperate stuff, session is the container that wraps the pods with that, allowing that which place, who created it and when...
+With sessions, later you can retrieve everything from that conversation you had with any platform.
+
+This needs to be implemented in MCP, HTTPS (for extension/Web).
+
+### Challanges
+
+- **MCP**, is request/response, no persistent connection or built-in session
+tracking. The session ID must be explicitly passed with every tool call.
+- **HTTP**, possible however how would you generate sessions, unless a consistent connection is provided.
+- How would we handle the resume of a session if user continues his conversation later on.
+
+#### Possible Solutions
+
+1. AI client (Claude Web, OpenCode) generates a session ID at conversation start, but redundant, if no pods generated.
+2. Every `pods_add` call includes `session: "session_abc123"`. Adds overhead in a pod, also how do you get the info, if provided how validated.
+3. Every `pods_search` call can filter by `session` to recall that conversation's context
+
+**Current status:** No Implementation to date.
+
 ---
 
 ## Visibility & Permissions
@@ -195,47 +234,8 @@ Extraction presets: summarize, bulletize, action-items, metadata-extract, custom
 
 In Postgres, Row-level security (RLS)  enforces this at the query level — no app-level filtering needed.
 
-
----
-
 ## Deployment
 
-For Phases 1 and 2 (SQLite), no external DB is needed — just the Python server.
-
-Deployment from local to cloud:
-
-There are 2 common ways:
-
-### 1. Tunnel
-
-- Cloudflare Tunnel or ngrok exposes your localhost to a public HTTPS URL
-- Free, no port forwarding, no router config
-- Cloudflare Tunnel is better — permanent free URL, more stable than ngrok free tier
-- Your machine needs to be on for it to work that's the benefit and usefulness.
-
-> [!note]
-> The Tunnel only works when your machine is on. If you close your machine, everything loses access to your MCP server. For personal use that might be fine. For something you want running reliably it's not.
-
-
-### 2. VPS
-
-- Your server runs 24/7, public IP, real domain
-- You own everything, no third party in the middle
-- Hetzner is cheapest for specs — popular in self-host community
-
----
-
-## Monetization
-
-| Tier | Price | Features |
-|------|-------|----------|
-| OSS | Free | Self-host, all features, single user |
-| Cloud Starter | $9/mo | Managed, 1 user, 1000 pods, 30-day history |
-| Cloud Pro | $29/mo | Managed, 5 users, unlimited pods, full history, teams |
-| Enterprise | Custom | Dedicated, SSO, audit, SLA |
-
----
-
----
+See [`deployment.md`](./deployment.md) for setup and deployment options.
 
 ---
