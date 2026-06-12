@@ -1,67 +1,14 @@
+from pathlib import Path
 from sqlite3 import Row
 
 from . import database as db
 
 def create_db():
     conn = db.get_connection()
-    cursor = conn.cursor() # create the pods table if it doesn't exist
-
-    create_db_query = """
-CREATE TABLE IF NOT EXISTS pods (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    pod_name    TEXT NOT NULL,
-    content     TEXT NOT NULL DEFAULT '{}',   -- one JSON bag, not two
-    project  TEXT,                          -- NULL = standalone
-    category    TEXT NOT NULL DEFAULT 'general',
-    created_at  TEXT NOT NULL DEFAULT (strftime('%d-%m-%Y,%H:%M:%S', 'now')),
-    updated_at  TEXT NOT NULL DEFAULT (strftime('%d-%m-%Y,%H:%M:%S', 'now')),
-    deleted_at  TEXT                           -- soft delete
-);
-
-CREATE TABLE IF NOT EXISTS pod_tags (
-    pod_id  INTEGER NOT NULL REFERENCES pods(id), -- foreign key to pods.id
-    tag     TEXT NOT NULL,
-    PRIMARY KEY (pod_id, tag)
-);
-
-CREATE INDEX IF NOT EXISTS Iidx_pods_category ON pods(category);
-CREATE INDEX IF NOT EXISTS idx_pods_project  ON pods(project);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS pods_fts USING fts5(
-    pod_name, content,
-    content='pods',
-    content_rowid='id'
-);
-
--- Triggers to keep the updated_at column updated automatically
-CREATE TRIGGER IF NOT EXISTS set_pods_timestamp 
-AFTER UPDATE ON pods
-BEGIN
-    UPDATE pods SET updated_at = datetime('now', 'localtime')
-    WHERE id = NEW.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS pods_fts_ai AFTER INSERT ON pods BEGIN
-    INSERT INTO pods_fts(rowid, pod_name, content) VALUES (new.id, new.pod_name, new.content);
-END;
-
-CREATE TRIGGER IF NOT EXISTS pods_fts_ad AFTER DELETE ON pods BEGIN
-    INSERT INTO pods_fts(pods_fts, rowid, pod_name, content) VALUES ('delete', old.id, old.pod_name, old.content);
-END;
-
-CREATE TRIGGER IF NOT EXISTS pods_fts_au AFTER UPDATE ON pods BEGIN
-    INSERT INTO pods_fts(pods_fts, rowid, pod_name, content) VALUES ('delete', old.id, old.pod_name, old.content);
-    INSERT INTO pods_fts(rowid, pod_name, content) VALUES (new.id, new.pod_name, new.content);
-END;
-
-"""
-
-
-    cursor.executescript(create_db_query) # execute the query
-    cursor.execute("INSERT INTO pods_fts(pods_fts) VALUES('rebuild')") # populate FTS index from existing data
-    conn.commit() # commit the changes to the db
-    conn.close() # close the connection
-
+    schema = Path(__file__).parent / "schema.sql"
+    conn.executescript(schema.read_text())
+    conn.commit()
+    conn.close()
 
 def create_pod(pod_name: str, content: str, project: str | None, category: str) -> int:
     conn = db.get_connection()
@@ -190,7 +137,7 @@ def list_projects() -> list[str]:
     return results
 
 
-def search_pods(query: str, project: str | None = None) -> list[dict]:
+def search_pods(query: str, project: str | None = None, category: str | None = None) -> list[dict]:
     conn = db.get_connection()
     cursor = conn.cursor()
 
@@ -203,6 +150,9 @@ AND p.deleted_at IS NULL"""
     if project:
         search_sql += " AND p.project = ?"
         params.append(project)
+    if category:
+        search_sql += " AND p.category = ?"
+        params.append(category)
 
     cursor.execute(search_sql, params)
     rows = cursor.fetchall()

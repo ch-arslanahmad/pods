@@ -34,13 +34,18 @@ def pods_delete(pod_id: int) -> bool:
 
 
 @mcp.tool()
-def pods_search(query: str, project: str | None = None) -> list[dict]:
-    return db.search_pods(query, project)
+def pods_search(query: str, project: str | None = None, category: str | None = None) -> list[dict]:
+    return db.search_pods(query, project, category)
 
 
 @mcp.tool()
 def pods_list_categories() -> list[str]:
     return db.list_categories()
+
+
+@mcp.tool()
+def pods_list(project: str | None = None, category: str | None = None) -> list[dict]:
+    return db.list_pods(category=category, project=project)
 
 
 @mcp.tool()
