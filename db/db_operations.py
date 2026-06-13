@@ -5,11 +5,8 @@ from sqlite3 import Row
 from . import database as db
 
 def create_db():
-    conn = db.get_connection()
-    schema = Path(__file__).parent / "schema.sql"
-    conn.executescript(schema.read_text())
-    conn.commit()
-    conn.close()
+    from . import migrate
+    migrate.run()
 
 def create_pod(pod_name: str, content: str, project: str | None, category: str) -> int:
     conn = db.get_connection()
