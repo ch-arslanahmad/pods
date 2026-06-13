@@ -1,0 +1,44 @@
+[
+  {
+    "pod_name": "ContextPods - What is this?",
+    "content": "ContextPods is a personal semantic memory system for capturing and retrieving context across AI tools.\n\nThe Problem: You talk to Claude, ChatGPT, and other AI tools. Each conversation is siloed. You can't easily reference something you learned in one tool when working in another. Context gets lost.\n\nThe Solution: A simple MCP server that stores \"pods\" — portable context snippets you can capture, tag, search, and retrieve across any LLM platform.\n\nWhat's a Pod?\nA pod is a structured container with a name, category, and content. You create it once, use it everywhere.\n\nRepository: https://github.com/ch-arslanahmad/pods\n\nCurrent Stage: Phase 1 - Local. Works with Claude web. Single Python MCP server, SQLite backend, no external dependencies.\n\nNot a product. A tool built to solve a real personal pain point. Build only what's needed, only when it's needed.",
+    "category": "project",
+    "project": "pods"
+  },
+  {
+    "pod_name": "Pods - Tech Stack & Architecture",
+    "content": "Stack: Python + MCP SDK (FastMCP), SQLite + FTS5.\n\nArchitecture:\n- server.py — MCP tool definitions, CLI arg parsing (--http for SSE, default stdio)\n- db/database.py — SQLite connection management, schema creation\n- db/db_operations.py — CRUD operations (create_pod, get_pod, update_pod, delete_pod, list_pods, search_pods, list_categories, list_projects)\n- db/schema.sql — Single source of truth for DDL, including FTS5 triggers\n- Conventions: soft deletes (deleted_at), FTS5 triggers handle insert/update/delete on content changes\n- Transports: stdio mode for local tools, SSE/HTTP for Claude Web via ngrok",
+    "category": "project",
+    "project": "pods"
+  },
+  {
+    "pod_name": "Pods - Key Dev Decisions",
+    "content": "1. Use Field() directly on function params (not a shared model class) so each MCP tool exposes only its own fields in the schema\n2. Single pods_fts_au trigger handles all update types (content change, soft-delete, undelete) via conditional re-insert\n3. Required fields have no default (Pydantic enforces); optional fields use = None\n4. Manual guards for None values removed — no longer needed with per-tool required fields\n5. SQLite parenthesized defaults: DEFAULT (datetime('now', 'localtime')) — SQLite requires parens for function calls\n6. FTS5 has no UPDATE — must delete then insert",
+    "category": "project",
+    "project": "pods"
+  },
+  {
+    "pod_name": "Pydantic - Quick Reference",
+    "content": "Field validators:\n- gt: greater than (exclusive), e.g. gt=0 rejects 0, -5\n- ge: greater than or equal, e.g. ge=1 accepts 1, 2...\n- le: less than or equal\n- min_length: minimum string length\n- max_length: maximum string length\n- pattern: regex pattern\n- Field(default=50): fallback if not provided\n- str | None = None: marks field as optional\n\nError messages are LLM-readable JSON-RPC — the model self-corrects from them.",
+    "category": "reference",
+    "project": "pods"
+  },
+  {
+    "pod_name": "MCP Server Gotchas",
+    "content": "- 0.0.0.0 required for ngrok tunnel — 127.0.0.1 triggers DNS rebinding protection\n- FastMCP auto-generates JSON schema for all tools from Python type hints + Field()\n- Soft deletes via deleted_at IS NULL filter, never hard delete\n- FTS5 content-sync tables need triggers to stay in sync\n- schema.sql is single source of truth; edit it, not database.py inline SQL",
+    "category": "reference",
+    "project": "pods"
+  },
+  {
+    "pod_name": "Ngrok Setup for Claude Web",
+    "content": "1. ngrok http http://localhost:8000 (or whatever port the MCP server runs on)\n2. Copy the ngrok URL (https://xxxx.ngrok.io)\n3. In Claude Web project config, add MCP server with that URL\n4. Must use 0.0.0.0 as host (not 127.0.0.1) to avoid DNS rebinding blocks",
+    "category": "guide",
+    "project": "pods"
+  },
+  {
+    "pod_name": "MCP Testing Session Summary",
+    "content": "MCP Testing Session Summary (12-06-2026)\n\nSTATUS: 2 pods created and verified. Live tool set tested.\n\nPODS CREATED:\n- ID 2: \"ContextPods - Project Overview\" (category: project, project_id: \"pods\")\n- ID 3: \"Phase 1 - Local MCP Server\" (category: technical, project_id: \"pods\")\n\nLIVE MCP TOOLS (6 total):\n- pods_add ✓ (pod_name, category, content, project_id optional)\n- pods_get ✓ (pod_id)\n- pods_update ✓ (pod_id, category, content, pod_name, project_id)\n- pods_delete ✓ (pod_id)\n- pods_search ✗ (keyword-only, no structured filters despite PLAN.md describing category/project/session)\n- pods_list_categories ✓ (no params)\n\nDISCREPANCIES FOUND:\n- pods_search lacks structured filters (category, project, session, limit, user_id from spec)\n- Schema field: \"content\" not \"data\" (vs DB_PLANNING.md)\n- No session_id support (only project_id exposed)\n- No pods_list tool (spec mentions 7 Phase 1 tools, only 6 live)\n- No project entity creation tool (pods tagged with project_id \"pods\" but project may not exist)\n- Timestamps auto-generated server-side (created_at, updated_at)\n\nCONFIRMED WORKING:\n- Claude web integration ✓\n- OpenCode: not tested yet\n- SQLite + FTS5 backend confirmed\n\nNEXT STEPS FOR MCP TESTING:\n- Test OpenCode with stdio mode\n- Test pods_update functionality\n- Test pods_delete (soft delete assumption)\n- Verify project_id referential integrity\n- Test pods_search with various keyword queries",
+    "category": "testing",
+    "project": null
+  }
+]

@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 from pydantic import Field
 from mcp.server.fastmcp import FastMCP
@@ -95,11 +96,16 @@ def pods_project_context(project: str) -> str:
 if __name__ == "__main__":
     db.create_db()
 
-    parser = argparse.ArgumentParser() # Create an argument parser
-    parser.add_argument("--http", action="store_true", help="Run in HTTP mode (SSE transport)") # Add an argument for HTTP mode
-    args = parser.parse_args() # Parse the command-line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--http", action="store_true", help="Run in HTTP mode (SSE transport)")
+    parser.add_argument("--seed", action="store_true", help="Load seed data from db/seed.json")
+    args = parser.parse_args()
 
-    if args.http: # if the --http flag is provided, run in HTTP mode
+    if args.seed:
+        n = db.seed_db()
+        print(f"Seeded {n} pods from seed.json", file=sys.stderr)
+
+    if args.http:
         mcp.run(transport="sse")
-    else: # otherwise, run in standard input/output mode
+    else:
         mcp.run(transport="stdio")

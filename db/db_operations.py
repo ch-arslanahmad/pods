@@ -1,5 +1,8 @@
+import json
 from pathlib import Path
 from sqlite3 import Row
+
+from . import database as db
 
 def create_db():
     conn = db.get_connection()
@@ -160,3 +163,31 @@ AND p.deleted_at IS NULL"""
     conn.close()
     results : list[dict] = [dict(r) for r in rows]
     return results
+
+
+def seed_db() -> int:
+    conn = db.get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM pods")
+    if cursor.fetchone()[0] > 0:
+        conn.close()
+        return 0
+
+    seed_path = Path(__file__).parent / "seed.json"
+    if not seed_path.exists():
+        print("seed.json not found, skipping", file=__import__('sys').stderr)
+        return 0
+
+    pods = json.loads(seed_path.read_text())
+    count = 0
+    for pod in pods:
+        cursor.execute("""
+            INSERT INTO pods (pod_name, content, category, project)
+            VALUES (?, ?, ?, ?)
+        """, (pod["pod_name"], pod["content"], pod["category"], pod.get("project")))
+        count += 1
+
+    conn.commit()
+    conn.close()
+    return count
