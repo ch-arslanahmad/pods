@@ -1,8 +1,6 @@
 from pathlib import Path
 from sqlite3 import Row
 
-from . import database as db
-
 def create_db():
     conn = db.get_connection()
     schema = Path(__file__).parent / "schema.sql"
@@ -40,7 +38,7 @@ def get_pod(pod_id: int) -> dict | None:
         return None
 
 
-def list_pods(category: str | None = None, project: str | None = None) -> list[dict]:
+def list_pods(category: str | None = None, project: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
     conn = db.get_connection()
     cursor = conn.cursor()
 
@@ -54,7 +52,8 @@ def list_pods(category: str | None = None, project: str | None = None) -> list[d
         sql += " AND project = ?"
         params.append(project)
 
-    sql += " ORDER BY created_at DESC" # sort by newest first
+    sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?" # sort by newest first
+    params.extend([limit, offset])
 
     cursor.execute(sql, params)
     rows = cursor.fetchall()
@@ -136,7 +135,7 @@ def list_projects() -> list[str]:
     return results
 
 
-def search_pods(query: str, project: str | None = None, category: str | None = None) -> list[dict]:
+def search_pods(query: str, project: str | None = None, category: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
     conn = db.get_connection()
     cursor = conn.cursor()
 
@@ -152,6 +151,9 @@ AND p.deleted_at IS NULL"""
     if category:
         search_sql += " AND p.category = ?"
         params.append(category)
+
+    search_sql += " LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
 
     cursor.execute(search_sql, params)
     rows = cursor.fetchall()

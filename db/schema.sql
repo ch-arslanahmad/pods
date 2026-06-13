@@ -5,8 +5,8 @@ CREATE TABLE IF NOT EXISTS pods (
     content     TEXT NOT NULL DEFAULT '{}',   -- one JSON bag, not two
     project     TEXT,                          -- plain text label, not a FK (for now); NULL = standalone
     category    TEXT NOT NULL DEFAULT 'general',
-    created_at  TEXT NOT NULL DEFAULT datetime('now', 'localtime'),
-    updated_at  TEXT NOT NULL DEFAULT datetime('now', 'localtime'),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     deleted_at  TEXT                           -- soft delete; never hard-delete rows
 );
 
@@ -42,7 +42,7 @@ END;
 -- after update: always delete old FTS entry, re-add only if pod isn't soft-deleted
 -- handles content updates, soft-delete, and undelete in one trigger
 CREATE TRIGGER IF NOT EXISTS pods_fts_au AFTER UPDATE ON pods BEGIN
-    INSERT INTO pods_fts(pods_fts, rowid, pod_name, content) VALUES ('delete', old.id, old.pod_name, old.content); # delete old entry
+    INSERT INTO pods_fts(pods_fts, rowid, pod_name, content) VALUES ('delete', old.id, old.pod_name, old.content); -- delete old entry
     INSERT INTO pods_fts(rowid, pod_name, content)
     SELECT new.id, new.pod_name, new.content
     WHERE new.deleted_at IS NULL; -- insert new entry only if not soft-deleted
