@@ -34,17 +34,18 @@ BEGIN
     WHERE id = NEW.id;
 END;
 
+-- after insert: add new pod to the search index
 CREATE TRIGGER IF NOT EXISTS pods_fts_ai AFTER INSERT ON pods BEGIN
     INSERT INTO pods_fts(rowid, pod_name, content) VALUES (new.id, new.pod_name, new.content);
 END;
 
-CREATE TRIGGER IF NOT EXISTS pods_fts_ad AFTER DELETE ON pods BEGIN
-    INSERT INTO pods_fts(pods_fts, rowid, pod_name, content) VALUES ('delete', old.id, old.pod_name, old.content);
-END;
-
+-- after update: always delete old FTS entry, re-add only if pod isn't soft-deleted
+-- handles content updates, soft-delete, and undelete in one trigger
 CREATE TRIGGER IF NOT EXISTS pods_fts_au AFTER UPDATE ON pods BEGIN
-    INSERT INTO pods_fts(pods_fts, rowid, pod_name, content) VALUES ('delete', old.id, old.pod_name, old.content);
-    INSERT INTO pods_fts(rowid, pod_name, content) VALUES (new.id, new.pod_name, new.content);
+    INSERT INTO pods_fts(pods_fts, rowid, pod_name, content) VALUES ('delete', old.id, old.pod_name, old.content); # delete old entry
+    INSERT INTO pods_fts(rowid, pod_name, content)
+    SELECT new.id, new.pod_name, new.content
+    WHERE new.deleted_at IS NULL; -- insert new entry only if not soft-deleted
 END;
 
 -- rebuild FTS index for any existing rows (safety net for re-runs)

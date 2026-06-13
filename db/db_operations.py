@@ -29,7 +29,7 @@ def get_pod(pod_id: int) -> dict | None:
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM pods WHERE id = ?", (pod_id,))
+    cursor.execute("SELECT * FROM pods WHERE id = ? AND deleted_at IS NULL", (pod_id,))
     row : Row = cursor.fetchone()
 
     conn.close()
@@ -103,8 +103,7 @@ def delete_pod(pod_id: int) -> bool:
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("UPDATE pods SET deleted_at = 1 WHERE id = ? AND deleted_at IS NULL", (pod_id,)) # soft delete
-    # deleted_at timestamp handled by DB trigger
+    cursor.execute("UPDATE pods SET deleted_at = datetime('now', 'localtime') WHERE id = ? AND deleted_at IS NULL", (pod_id,)) # soft delete
     conn.commit()
     deleted = cursor.rowcount > 0
     conn.close()
