@@ -6,8 +6,11 @@
 # stdio mode (OpenCode, Claude Desktop, Cursor)
 .venv/bin/python server.py
 
-# HTTP mode (Claude Web via ngrok)
+# HTTP mode (MCP SSE + REST API on same port)
 .venv/bin/python server.py --http
+
+# With seed data
+.venv/bin/python server.py --http --seed
 ```
 
 Listens on `0.0.0.0:8000` in HTTP mode.
@@ -33,13 +36,61 @@ OpenCode connects directly via stdio — no network needed.
 > [!important]
 > Replace the command path with the absolute path, `~/Desktop/github/pods/.venv/bin/python` if running from outside the project directory. Tools auto-discover on launch.
 
-HTTPS version is not yet developed, coming soon.
+Cloudflare Tunnel provides HTTPS automatically — no extra setup needed.
 
 Use naturally: "save this as a pod".
 
-## ngrok Setup
+## Cloudflare Tunnel (Recommended)
 
-ngrok creates a public HTTPS URL that tunnels to your local server.
+Download at, [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/)
+Free, no interstitial page, works with any AI tool out of the box.
+
+
+### Usage
+
+```bash
+# 1. Start the server
+.venv/bin/python server.py --http
+
+# 2. In another terminal, expose it
+cloudflared tunnel --url http://localhost:8000
+```
+
+Output looks like:
+```
+Your quick Tunnel has been created! Visit it at:
+https://random-words.trycloudflare.com
+```
+
+### Claude Web
+
+Add a connector in Claude Web:
+- ***Settings > Connectors > Add Connector***
+- Name: `pods`
+- Server URL: `<url>/sse` (e.g. `https://random-words.trycloudflare.com/sse`)
+- Save
+
+### REST API
+
+```
+https://random-words.trycloudflare.com/[endpoint]
+```
+
+No headers needed, no interstitial — works with curl, browsers, and AI tools immediately.
+
+### Caveats
+
+| | Quick tunnel (`--url`) | Named tunnel (Zero Trust) |
+|---|---|---|
+| **URL** | Random, changes each restart | Your own domain, permanent |
+| **Cost** | Free | Free |
+| **Setup** | One command | Requires domain + DNS config |
+| **Restart** | New URL each time | Same URL always |
+
+The quick tunnel is fine for testing. For daily use, set up a [named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/).
+
+
+It is alternative to ngrok which also works but its free tier gives one consistent URL page & that URL has one constant content unless you pay pay.
 
 ### Install
 
@@ -54,69 +105,47 @@ Sign up at `https://dashboard.ngrok.com`, then copy your token:
 ngrok config add-authtoken <your-token>
 ```
 
-### Create a Domain (Free)
+### Usage
 
 ```bash
+# URL (may not work + changes URL each time)
 ngrok http 8000
-```
 
-This gives a random URL (changes each time). For a permanent URL:
-
-1. Go to https://dashboard.ngrok.com/domains
-2. Reserve a domain (free tier gives one)
-3. Use it with: `ngrok http 8000 --url=<your-domain>.ngrok-free.dev`
-
-## Claude Web (HTTP + ngrok)
-
-Requires a public URL provided by ngrok.
-
-### 1. Start the server:
-
-```bash
-.venv/bin/python server.py --http
-```
-
-### 2. Expose with ngrok:
-
-```bash
 ngrok http 8000 --url=<your-domain>.ngrok-free.dev
 ```
 
-MCP endpoint: `https://<your-domain>.ngrok-free.dev/sse`
+### Claude Web
 
-> [!note]
-> If you have a specific domain already.
-
-### 3. Add connector in Claude Web:
-
+Add a connector in Claude Web:
 - ***Settings > Connectors > Add Connector***
 - Name: `pods`
-- Server URL: `https://<your-domain>.ngrok-free.dev/sse`
+- Server URL: `https://<your-domain>.ngrok-free.dev/sse` (or the ephemeral URL)
 - Save
 
-Tools discover automatically. The page (due to using ngrok free tier) only appears in browsers, MCP protocol connections bypass it entirely.
+### Caveats
 
-## Deployment Options (Local to Cloud)
+- **Free tier** shows an interstitial page in browsers (click-through required)
+- **AI tools** cannot bypass the interstitial — they need `ngrok-skip-browser-warning` header which most don't support
+- **MCP protocol** bypasses the interstitial automatically (no browser involved)
+- **Paid tier** removes the interstitial entirely
+
+## Deployment Options
 
 For Phases 1 and 2 (SQLite), no external DB is needed — just the Python server.
 
-There are 2 common ways:
+### 1. Tunnel (Free, Manual)
 
-### 1. Tunnel
+- **Cloudflare Tunnel** (recommended) — free, no interstitial, works with any AI tool out of the box
+- **ngrok** — free tier has interstitial that blocks AI tools, paid tier removes it
+- No port forwarding, no router config
+- Your machine must be on — tunnel dies when laptop closes
 
-- Cloudflare Tunnel or ngrok exposes your localhost to a public HTTPS URL
-- Free, no port forwarding, no router config
-- Cloudflare Tunnel is better — permanent free URL, more stable than ngrok free tier
-- Your machine needs to be on for it to work that's the benefit and usefulness.
-
-> [!note]
-> The Tunnel only works when your machine is on. If you close your machine, everything loses access to your MCP server. For personal use that might be fine. For something you want running reliably it's not.
-
-### 2. VPS
+### 2. VPS (Paid, Always-On)
 
 - Your server runs 24/7, public IP, real domain
-- You own everything, no third party in the middle
-- Hetzner is cheapest for specs, popular in self-host community
+- No third-party dependency
+- Hetzner is cheapest, popular in self-host community
+- Enables always-on MCP connectors without restarting tunnels
 
 ## Troubleshooting
 
@@ -124,6 +153,9 @@ There are 2 common ways:
 | ----------------------------- | ----------------------------------------------------- |
 | Server won't start            | Check `.venv/bin/python` exists, activate venv        |
 | ngrok fails                   | Run `ngrok config add-authtoken <token>` first        |
-| "Connection refused"          | Ensure server is running before starting ngrok        |
+| cloudflared not found         | Install it — `sudo pacman -S cloudflared` on Arch     |
+| "Connection refused"          | Ensure server is running before starting tunnel       |
 | Tools not showing in Claude   | Verify URL ends with `/sse`, check connector settings |
 | Tools not showing in OpenCode | Verify `command` path is absolute & restart OpenCode  |
+| Browser shows interstitial    | Switch to Cloudflare Tunnel (no interstitial)         |
+| Tunnel URL changed            | Update Claude Web connector with the new URL          |
