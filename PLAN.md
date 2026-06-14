@@ -13,12 +13,15 @@ A scoped semantic memory system I actually use daily with my AI tools. Not a pro
 **What it is:** A single Python MCP server with SQLite. stdio mode for local tools, HTTP mode for Claude web.
 
 **MCP tools:**
-- `pods_search` — FTS5 full-text search + structured filters (category, project, session)
+
+- `pods_find` — search (FTS5) or list with optional category/project filters
 - `pods_add` — create a memory pod
 - `pods_get` — get by ID
 - `pods_update` — patch fields
 - `pods_delete` — soft delete
 - `pods_list_categories` — distinct categories
+- `pods_list_projects` — distinct projects
+- `pods_ping` — health check
 
 **Schema:** See `db/schema.sql` for exact DDL.
 
@@ -27,7 +30,8 @@ A scoped semantic memory system I actually use daily with my AI tools. Not a pro
 See [`docs/deployment.md`](./docs/deployment.md) for setup instructions — running the server, OpenCode config, Claude Web via ngrok, and deployment options.
 
 **TODOs:**
-- Add migration support — rebuilding the DB should preserve existing pods instead of destroying them
+
+- [x] Add migration support — rebuilding the DB should preserve existing pods instead of destroying them
 - Test with OpenCode (currently testing only with Claude Web)
 
 ## Stage 2 — Hosted (Next)
@@ -38,7 +42,8 @@ See [`docs/deployment.md`](./docs/deployment.md) for setup instructions — runn
 
 **Deploy options:** See [`docs/deployment.md`](./docs/deployment.md).
 
-**Docs:**
+## Documentation
+
 - `docs/pods.md` — full product spec for the ideal system
 - `docs/deployment.md` — setup and deployment guide
 - `docs/DB_PLANNING.md` — Postgres/vector architecture

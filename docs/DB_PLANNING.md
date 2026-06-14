@@ -106,7 +106,7 @@ Deployment details to be decided when Stage 2 is reached.
 | Layer | Constant |
 |-------|----------|
 | Pod data model | pod_name, category, data, associations, visibility, metadata, provenance |
-| MCP tool names | `search_pods`, `create_pod`, `get_pod`, `update_pod`, `delete_pod`, etc. |
+| MCP tool names | `find_pods`, `create_pod`, `get_pod`, `update_pod`, `delete_pod`, etc. |
 | REST API endpoints | `/api/v1/pods/...` |
 | CLI subcommands | `pod add`, `pod list`, `pod get`, etc. |
 | Python data structures | Dicts with same keys going in and out |

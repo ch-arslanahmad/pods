@@ -29,10 +29,10 @@ MCP-native memory server for AI agents. Organize knowledge by project, session, 
 
 ### Conventions
 
-- MCP tool naming: `pods_verb` (e.g. `pods_search`, `pods_add`)
+- MCP tool naming: `pods_verb` (e.g. `pods_find`, `pods_add`)
 - Schema: SQLite with JSON columns for associations, FTS5 for search
 - Soft deletes via `deleted_at`, never hard delete
-- No emojis in docs or code comments
+- Comments allowed but kept minimal and meaningful — no noise, no obvious self-explanatory code
 - Python stdlib + `mcp` package, minimal dependencies
 
 ### Commit Convention

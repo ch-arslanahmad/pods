@@ -38,24 +38,44 @@ def get_pod(pod_id: int) -> dict | None:
         return None
 
 
-def list_pods(category: str | None = None, project: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
+def find_pods(query: str | None = None, category: str | None = None, project: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    sql = "SELECT * FROM pods WHERE deleted_at IS NULL" # only return non-deleted pods
-    params: list = []
+    if query:
+        search_sql = """SELECT p.* FROM pods p
+JOIN pods_fts fts ON p.id = fts.ROWID
+WHERE pods_fts MATCH ?
+AND p.deleted_at IS NULL"""
+        params: list = [query]
 
-    if category:
-        sql += " AND category = ?"
-        params.append(category)
-    if project:
-        sql += " AND project = ?"
-        params.append(project)
+        if project:
+            search_sql += " AND p.project = ?"
+            params.append(project)
+        if category:
+            search_sql += " AND p.category = ?"
+            params.append(category)
 
-    sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?" # sort by newest first
-    params.extend([limit, offset])
+        search_sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
 
-    cursor.execute(sql, params)
+        cursor.execute(search_sql, params)
+    else:
+        sql = "SELECT * FROM pods WHERE deleted_at IS NULL"
+        params: list = []
+
+        if category:
+            sql += " AND category = ?"
+            params.append(category)
+        if project:
+            sql += " AND project = ?"
+            params.append(project)
+
+        sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        cursor.execute(sql, params)
+
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -132,33 +152,6 @@ def list_projects() -> list[str]:
 
     results = [r["project"] for r in rows]
 
-    return results
-
-
-def search_pods(query: str, project: str | None = None, category: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
-    conn = db.get_connection()
-    cursor = conn.cursor()
-
-    search_sql = """SELECT p.* FROM pods p 
-JOIN pods_fts fts ON p.id = fts.ROWID
-WHERE pods_fts MATCH ?
-AND p.deleted_at IS NULL"""
-    params: list = [query]
-
-    if project:
-        search_sql += " AND p.project = ?"
-        params.append(project)
-    if category:
-        search_sql += " AND p.category = ?"
-        params.append(category)
-
-    search_sql += " LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
-
-    cursor.execute(search_sql, params)
-    rows = cursor.fetchall()
-    conn.close()
-    results : list[dict] = [dict(r) for r in rows]
     return results
 
 

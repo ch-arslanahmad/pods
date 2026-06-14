@@ -85,10 +85,7 @@ Current implementation targets Phase 1. See `DB_PLANNING.md` for full details.
 
 ```
 Search / Read
-  search_pods(query, category?, project?, session?, limit?, user_id?)
-    → hybrid search (vector + structured + full-text), scored results
-  get_pod(id)           → full pod with metadata + embedding
-  list_pods(filters)    → filtered list
+  find_pods(query?, category?, project?, limit?)  → search or list with filters
 
 Write
   create_pod(data)      → auto-generates embedding, returns pod
@@ -218,7 +215,7 @@ tracking. The session ID must be explicitly passed with every tool call.
 
 1. AI client (Claude Web, OpenCode) generates a session ID at conversation start, but redundant, if no pods generated.
 2. Every `pods_add` call includes `session: "session_abc123"`. Adds overhead in a pod, also how do you get the info, if provided how validated.
-3. Every `pods_search` call can filter by `session` to recall that conversation's context
+3. Every `pods_find` call can filter by `session` to recall that conversation's context
 
 **Current status:** No Implementation to date.
 
