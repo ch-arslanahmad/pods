@@ -7,7 +7,7 @@
   },
   {
     "pod_name": "Pods - Tech Stack & Architecture",
-    "content": "Stack: Python + MCP SDK (FastMCP), SQLite + FTS5.\n\nArchitecture:\n- server.py — MCP tool definitions, CLI arg parsing (--http for SSE, default stdio)\n- db/database.py — SQLite connection management, schema creation\n- db/db_operations.py — CRUD operations (create_pod, get_pod, update_pod, delete_pod, list_pods, search_pods, list_categories, list_projects)\n- db/schema.sql — Single source of truth for DDL, including FTS5 triggers\n- Conventions: soft deletes (deleted_at), FTS5 triggers handle insert/update/delete on content changes\n- Transports: stdio mode for local tools, SSE/HTTP for Claude Web via ngrok",
+    "content": "Stack: Python + MCP SDK (FastMCP), SQLite + FTS5.\n\nArchitecture:\n- server.py — MCP tool definitions, CLI arg parsing (--http for SSE, default stdio)\n- db/database.py — SQLite connection management, schema creation\n- db/db_operations.py — CRUD operations (create_pod, get_pod, update_pod, delete_pod, find_pods, list_categories, list_projects)\n- db/schema.sql — Single source of truth for DDL, including FTS5 triggers\n- Conventions: soft deletes (deleted_at), FTS5 triggers handle insert/update/delete on content changes\n- Transports: stdio mode for local tools, SSE/HTTP for Claude Web via ngrok",
     "category": "project",
     "project": "pods"
   },

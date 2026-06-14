@@ -91,8 +91,10 @@ if __name__ == "__main__":
     db.create_db()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--http", action="store_true", help="Run in HTTP mode (SSE transport)")
+    parser.add_argument("--http", action="store_true", help="Run in HTTP mode (SSE + REST API)")
     parser.add_argument("--seed", action="store_true", help="Load seed data from db/seed.json")
+    parser.add_argument("--port", type=int, default=8000, help="Port for HTTP mode (default: 8000)")
+    parser.add_argument("--host", default="0.0.0.0", help="Host for HTTP mode (default: 0.0.0.0)")
     args = parser.parse_args()
 
     if args.seed:
@@ -100,6 +102,9 @@ if __name__ == "__main__":
         print(f"Seeded {n} pods from seed.json", file=sys.stderr)
 
     if args.http:
-        mcp.run(transport="sse")
+        import uvicorn
+        from api import create_app
+        app = create_app()
+        uvicorn.run(app, host=args.host, port=args.port)
     else:
         mcp.run(transport="stdio")
