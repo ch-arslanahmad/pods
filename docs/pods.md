@@ -1,7 +1,6 @@
 # Pods — Scoped Semantic Memory System
 
-Cross-agent, platform-agnostic memory server. Pods are structured containers
-for contextual data with semantic search, scoped organization, and provenance.
+Cross-agent, platform-agnostic memory server. Pods are structured containers for contextual data with semantic search, scoped organization, and provenance.
 
 Used by any LLM/agent via MCP (stdio/HTTP), REST API, Web UI, or CLI.
 

@@ -8,6 +8,7 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True) # create the db directory if i
 def get_connection() -> sql.Connection:
     conn = sql.connect(DB_PATH) # connect to the db, if doesn't exist, will be created
     conn.row_factory = sql.Row # default: tuples, we want dicts for access like row['column_name'] instead of row[0].
+    conn.execute("PRAGMA journal_mode=WAL") # WAL required for Turso import, also better concurrent read performance
     return conn
 
 
@@ -33,7 +34,7 @@ CREATE TABLE IF NOT EXISTS pod_tags (
     PRIMARY KEY (pod_id, tag)
 );
 
-CREATE INDEX IF NOT EXISTS Iidx_pods_category ON pods(category);
+CREATE INDEX IF NOT EXISTS idx_pods_category ON pods(category);
 CREATE INDEX IF NOT EXISTS idx_pods_project  ON pods(project);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS pods_fts USING fts5(

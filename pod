@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+
+# Click uses decorators to define commands, handles argument parsing,
+# type validation, and generates --help text automatically.
+
+import os
+import signal
+import socket
+import subprocess
+import time
+from pathlib import Path
+
+import click
+
+SCRIPT_DIR = Path(__file__).parent
+PID_FILE = SCRIPT_DIR / "pod.pid"
+LOG_FILE = SCRIPT_DIR / "server.log"
+
+VENV = SCRIPT_DIR / ".venv" / "bin" / "python"
+FILE_PATH = SCRIPT_DIR / "server.py"
+
+
+# Helper functions
+
+
+# helper function to a helper function (start server: check if running)
+def _is_server_running():
+    """Check if server is already running."""
+    if not PID_FILE.exists():
+        return False
+    pid = int(PID_FILE.read_text())
+    try:
+        os.kill(pid, 0)  # Check if process exists
+        return True
+    except ProcessLookupError:
+        PID_FILE.unlink()  # Clean up stale PID file
+        return False
+
+
+def _do_start(port=None):
+    """Start the server in HTTP mode."""
+    if _is_server_running():
+        click.secho("Server is already running.", fg="yellow")
+        return
+
+    if port is None:
+        port = 8000
+
+        # will fail if port is in use, however that is on user
+
+    click.secho(f"Starting HTTP server on port {port}...", fg="blue")
+    with open(LOG_FILE, "w") as log:
+        proc = subprocess.Popen(
+            [str(VENV), str(FILE_PATH), "--http", f"--port={port}"],
+            stdout=log,
+            stderr=log,
+        )
+    PID_FILE.write_text(str(proc.pid))
+    click.echo(f"Server started (PID: {proc.pid})")
+
+
+def _do_stop():
+    """Stop the server."""
+    if PID_FILE.exists():
+        pid = int(PID_FILE.read_text())
+        try:
+            os.kill(pid, signal.SIGTERM)
+            click.echo("Server stopped.")
+        except ProcessLookupError:
+            click.echo("Server was not running (stale PID file).")
+        PID_FILE.unlink()
+    else:
+        click.echo("No server is running.")
+
+
+@click.group()
+def cli():
+    """A CLI tool for managing LLM memory server, PODs"""
+    pass
+
+
+@cli.command()
+def status():
+    """Check the status of the pod."""
+    if PID_FILE.exists():
+        pid = int(PID_FILE.read_text())
+        try:
+            os.kill(pid, 0)  # Check if process exists
+            click.secho("Server is running.", fg="green")
+            click.echo(f"PID: {pid}")
+        except ProcessLookupError:
+            click.secho("Server is NOT running (stale PID file).", fg="red")
+            PID_FILE.unlink()
+    else:
+        click.secho("Server is NOT running.", fg="red")
+
+
+@cli.group()
+def server():
+    """Server management (start (--local, --port), stop, restart)."""
+    pass
+
+
+# ./pod server start
+@server.command()
+@click.option("--local", is_flag=True, help="Run in local mode (stdio)")
+@click.option("--port", type=int, help="Port to listen on")
+def start(local, port):
+    """Start the server (local or HTTP mode)."""
+    if local:
+        click.secho("Starting in local mode (stdio)...", fg="green")
+        click.echo("\n In the config, add the following command to run in local mode:")
+        click.secho("pod server --local", fg="black", bg="green")
+        click.echo("Running in local mode...")
+        os.execv(str(VENV), [str(VENV), str(FILE_PATH)])
+    else:
+        _do_start(port)
+
+
+# ./pod server stop
+@server.command()
+def stop():
+    """Stop the server."""
+    _do_stop()
+
+
+# ./pod server restart
+@server.command()
+@click.option("--port", type=int, default=8000, help="Port to listen on")
+def restart(port):
+    """Restart the server."""
+    _do_stop()
+    _do_start(port)
+
+
+# ./pod server install
+@server.command()
+def install():
+    """Install as systemd service."""
+    pass
+
+
+# ./pod server uninstall
+@server.command()
+def uninstall():
+    """Remove systemd service."""
+    pass
+
+
+# main function
+if __name__ == "__main__":
+    cli()
