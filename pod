@@ -10,6 +10,8 @@ from pathlib import Path
 
 import click
 
+import tunnel
+
 __version__ = "0.0.7"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -72,6 +74,10 @@ def _do_stop():
 def cli():
     """A CLI tool for managing LLM memory server, PODs"""
     pass
+
+
+# Register tunnel commands
+tunnel.register(cli)
 
 
 @cli.command()
