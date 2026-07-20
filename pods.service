@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=%h/pods
-ExecStart=python3 server.py --http
+ExecStart=PYTHON_PLACEHOLDER server.py --http
 Restart=on-failure
 RestartSec=5
 

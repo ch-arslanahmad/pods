@@ -12,7 +12,7 @@ import click
 
 __version__ = "0.0.7"
 
-SCRIPT_DIR = Path(__file__).parent
+SCRIPT_DIR = Path(__file__).resolve().parent
 PID_FILE = SCRIPT_DIR / "pod.pid"
 
 VENV = SCRIPT_DIR / ".venv" / "bin" / "python"
@@ -94,10 +94,21 @@ def completion():
 @cli.command()
 def status():
     """Check the status of the pod."""
+    # check systemd service first
+    result = subprocess.run("systemctl --user is-active pods 2>/dev/null", shell=True, capture_output=True, text=True)
+    if result.stdout.strip() == "active":
+        click.secho("Server is running (systemd).", fg="green")
+        # show PID
+        result = subprocess.run("systemctl --user show pods --property=MainPID --value", shell=True, capture_output=True, text=True)
+        if result.stdout.strip() and result.stdout.strip() != "0":
+            click.echo(f"PID: {result.stdout.strip()}")
+        return
+
+    # fall back to PID file check
     if PID_FILE.exists():
         pid = int(PID_FILE.read_text())
         try:
-            os.kill(pid, 0)  # Check if process exists
+            os.kill(pid, 0)
             click.secho("Server is running.", fg="green")
             click.echo(f"PID: {pid}")
         except ProcessLookupError:
@@ -212,6 +223,18 @@ def restart(port):
 @server.command()
 def install():
     """Install as systemd service and symlink pod command."""
+    # check if already installed
+    local_service = Path.home() / ".config" / "systemd" / "user" / "pods.service"
+    global_service = Path("/etc/systemd/system/pods.service")
+    local_symlink = Path.home() / ".local" / "bin" / "pod"
+    global_symlink = Path("/usr/local/bin/pod")
+
+    already_installed = local_service.exists() or global_service.exists() or local_symlink.exists() or global_symlink.exists()
+    if already_installed:
+        click.secho("Already installed.", fg="yellow")
+        if not click.confirm("Reinstall?"):
+            return
+
     scope = click.prompt("Install scope", type=click.Choice(["local", "global"]))
 
     if scope == "local":
@@ -231,9 +254,16 @@ def install():
         subprocess.run(f"{sudo}ln -sf {SCRIPT_DIR / 'pod'} {bin_dir}/pod", shell=True, check=True)
         click.secho(f"pod linked to {bin_dir}/pod", fg="green")
 
-        # install service
+        # install service (replace placeholders with actual paths)
         subprocess.run(f"{sudo}mkdir -p {service_dir}", shell=True, check=True)
-        subprocess.run(f"{sudo}cp {SCRIPT_DIR / 'pods.service'} {service_dir}/pods.service", shell=True, check=True)
+        service_content = (SCRIPT_DIR / "pods.service").read_text()
+        service_content = service_content.replace("PYTHON_PLACEHOLDER", str(VENV))
+        service_content = service_content.replace("WorkingDirectory=%h/pods", f"WorkingDirectory={SCRIPT_DIR}")
+        if sudo:
+            subprocess.run(f"echo {repr(service_content)} | sudo tee {service_dir}/pods.service > /dev/null", shell=True, check=True)
+        else:
+            service_file = Path(service_dir).expanduser() / "pods.service"
+            service_file.write_text(service_content)
         subprocess.run(f"{systemctl} daemon-reload", shell=True, check=True)
 
         # add shell completion
