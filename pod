@@ -5,16 +5,15 @@
 
 import os
 import signal
-import socket
 import subprocess
-import time
 from pathlib import Path
 
 import click
 
+__version__ = "0.0.7"
+
 SCRIPT_DIR = Path(__file__).parent
 PID_FILE = SCRIPT_DIR / "pod.pid"
-LOG_FILE = SCRIPT_DIR / "server.log"
 
 VENV = SCRIPT_DIR / ".venv" / "bin" / "python"
 FILE_PATH = SCRIPT_DIR / "server.py"
@@ -46,15 +45,10 @@ def _do_start(port=None):
     if port is None:
         port = 8000
 
-        # will fail if port is in use, however that is on user
-
     click.secho(f"Starting HTTP server on port {port}...", fg="blue")
-    with open(LOG_FILE, "w") as log:
-        proc = subprocess.Popen(
-            [str(VENV), str(FILE_PATH), "--http", f"--port={port}"],
-            stdout=log,
-            stderr=log,
-        )
+    proc = subprocess.Popen(
+        [str(VENV), str(FILE_PATH), "--http", f"--port={port}"],
+    )
     PID_FILE.write_text(str(proc.pid))
     click.echo(f"Server started (PID: {proc.pid})")
 
@@ -74,6 +68,7 @@ def _do_stop():
 
 
 @click.group()
+@click.version_option(__version__, prog_name="pod")
 def cli():
     """A CLI tool for managing LLM memory server, PODs"""
     pass
@@ -93,6 +88,50 @@ def status():
             PID_FILE.unlink()
     else:
         click.secho("Server is NOT running.", fg="red")
+
+
+@cli.command()
+def doctor():
+    """Check if pod is correctly installed."""
+    # check symlink
+    global_path = "/usr/local/bin/pod"
+    user_path = Path.home() / ".local" / "bin" / "pod"
+
+    issues = []
+
+    if Path(global_path).exists():
+        target = os.readlink(global_path)
+        if not Path(target).exists():
+            issues.append(f"Symlink broken: {global_path} -> {target}")
+        else:
+            click.secho(f"Global symlink OK: {global_path} -> {target}", fg="green")
+    elif user_path.exists():
+        target = os.readlink(str(user_path))
+        if not Path(target).exists():
+            issues.append(f"Symlink broken: {user_path} -> {target}")
+        else:
+            click.secho(f"User symlink OK: {user_path} -> {target}", fg="green")
+    else:
+        issues.append("No symlink found. Run: pod server install")
+
+    # check venv
+    if VENV.exists():
+        click.secho(f"Venv OK: {VENV}", fg="green")
+    else:
+        issues.append(f"Venv not found: {VENV}")
+
+    # check server.py
+    if FILE_PATH.exists():
+        click.secho(f"Server OK: {FILE_PATH}", fg="green")
+    else:
+        issues.append(f"Server not found: {FILE_PATH}")
+
+    if issues:
+        click.secho("\nIssues found:", fg="red")
+        for issue in issues:
+            click.echo(f"  - {issue}")
+    else:
+        click.secho("\nAll checks passed!", fg="green")
 
 
 @cli.group()
@@ -124,6 +163,25 @@ def stop():
     _do_stop()
 
 
+# ./pod server logs
+@click.option("-n", "--lines", default=20, help="Number of log lines to show")
+@server.command()
+def logs(lines):
+    """Tail server logs (systemd journal)."""
+    # detect scope
+    result = subprocess.run(
+        'if [ -f ~/.config/systemd/user/pods.service ]; then echo "local"; elif [ -f /etc/systemd/system/pods.service ]; then echo "global"; fi',
+        shell=True, capture_output=True, text=True
+    )
+    scope = result.stdout.strip()
+    if scope == "local":
+        subprocess.run(f"journalctl --user -u pods -n {lines} --no-pager", shell=True)
+    elif scope == "global":
+        subprocess.run(f"sudo journalctl -u pods -n {lines} --no-pager", shell=True)
+    else:
+        click.secho("No service found. Logs available at: server.log (if running manually)", fg="yellow")
+
+
 # ./pod server restart
 @server.command()
 @click.option("--port", type=int, default=8000, help="Port to listen on")
@@ -136,15 +194,72 @@ def restart(port):
 # ./pod server install
 @server.command()
 def install():
-    """Install as systemd service."""
-    pass
+    """Install as systemd service and symlink pod command."""
+    scope = click.prompt("Install scope", type=click.Choice(["local", "global"]))
+
+    if scope == "local":
+        service_dir = "~/.config/systemd/user"
+        sudo = ""
+        systemctl = "systemctl --user"
+        bin_dir = str(Path.home() / ".local" / "bin")
+    else:
+        service_dir = "/etc/systemd/system"
+        sudo = "sudo "
+        systemctl = "sudo systemctl"
+        bin_dir = "/usr/local/bin"
+
+    try:
+        # symlink pod command
+        subprocess.run(f"{sudo}mkdir -p {bin_dir}", shell=True, check=True)
+        subprocess.run(f"{sudo}ln -sf {SCRIPT_DIR / 'pod'} {bin_dir}/pod", shell=True, check=True)
+        click.secho(f"pod linked to {bin_dir}/pod", fg="green")
+
+        # install service
+        subprocess.run(f"{sudo}mkdir -p {service_dir}", shell=True, check=True)
+        subprocess.run(f"{sudo}cp {SCRIPT_DIR / 'pods.service'} {service_dir}/pods.service", shell=True, check=True)
+        subprocess.run(f"{systemctl} daemon-reload", shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        click.secho(f"Install failed: {e}", fg="red")
+        return
+
+    if click.confirm("Enable and start the service now?"):
+        subprocess.run(f"{systemctl} enable --now pods", shell=True, check=True)
+        click.secho("Service enabled and started.", fg="green")
+    else:
+        click.echo(f"Service installed. Run: {systemctl} enable --now pods")
 
 
 # ./pod server uninstall
 @server.command()
 def uninstall():
-    """Remove systemd service."""
-    pass
+    """Remove systemd service and pod symlink."""
+    result = subprocess.run(
+        'if [ -f ~/.config/systemd/user/pods.service ]; then echo "local"; elif [ -f /etc/systemd/system/pods.service ]; then echo "global"; fi',
+        shell=True, capture_output=True, text=True
+    )
+    scope = result.stdout.strip()
+
+    if not scope:
+        click.secho("No service found.", fg="yellow")
+        return
+
+    try:
+        if scope == "local":
+            subprocess.run("systemctl --user stop pods 2>/dev/null", shell=True, capture_output=True)
+            subprocess.run("systemctl --user disable pods 2>/dev/null", shell=True, capture_output=True)
+            subprocess.run("rm -f ~/.config/systemd/user/pods.service", shell=True, check=True)
+            subprocess.run("systemctl --user daemon-reload 2>/dev/null", shell=True, capture_output=True)
+            subprocess.run("rm -f ~/.local/bin/pod", shell=True, check=True)
+        else:
+            subprocess.run("sudo systemctl stop pods 2>/dev/null", shell=True, capture_output=True)
+            subprocess.run("sudo systemctl disable pods 2>/dev/null", shell=True, capture_output=True)
+            subprocess.run("sudo rm -f /etc/systemd/system/pods.service", shell=True, check=True)
+            subprocess.run("sudo systemctl daemon-reload 2>/dev/null", shell=True, capture_output=True)
+            subprocess.run("sudo rm -f /usr/local/bin/pod", shell=True, check=True)
+
+        click.secho(f"Service uninstalled ({scope}).", fg="green")
+    except subprocess.CalledProcessError as e:
+        click.secho(f"Uninstall failed: {e}", fg="red")
 
 
 # main function
