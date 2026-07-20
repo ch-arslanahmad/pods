@@ -75,6 +75,23 @@ def cli():
 
 
 @cli.command()
+def completion():
+    """Show shell completion setup instructions."""
+    shell = os.environ.get("SHELL", "")
+    if "zsh" in shell:
+        click.echo("Add to ~/.zshrc:")
+        click.secho('eval "$(_POD_COMPLETE=zsh_source pod)"', fg="green")
+    elif "fish" in shell:
+        click.echo("Add to ~/.config/fish/completions/pod.fish:")
+        click.secho('eval (env _POD_COMPLETE=fish_source pod)', fg="green")
+    elif "bash" in shell:
+        click.echo("Add to ~/.bashrc:")
+        click.secho('eval "$(_POD_COMPLETE=bash_source pod)"', fg="green")
+    else:
+        click.secho(f"Unknown shell: {shell}. Manually add completion for your shell.", fg="red")
+
+
+@cli.command()
 def status():
     """Check the status of the pod."""
     if PID_FILE.exists():
@@ -218,6 +235,26 @@ def install():
         subprocess.run(f"{sudo}mkdir -p {service_dir}", shell=True, check=True)
         subprocess.run(f"{sudo}cp {SCRIPT_DIR / 'pods.service'} {service_dir}/pods.service", shell=True, check=True)
         subprocess.run(f"{systemctl} daemon-reload", shell=True, check=True)
+
+        # add shell completion
+        shell = os.environ.get("SHELL", "")
+        if "zsh" in shell:
+            rc_file = Path.home() / ".zshrc"
+            completion_line = 'eval "$(_POD_COMPLETE=zsh_source pod)"'
+        elif "fish" in shell:
+            rc_file = Path.home() / ".config" / "fish" / "completions" / "pod.fish"
+            completion_line = "_POD_COMPLETE=fish_source pod > " + str(rc_file)
+        else:
+            rc_file = Path.home() / ".bashrc"
+            completion_line = 'eval "$(_POD_COMPLETE=bash_source pod)"'
+
+        # only add if not already present
+        if rc_file.exists() and completion_line in rc_file.read_text():
+            click.secho("Shell completion already configured.", fg="green")
+        else:
+            with open(rc_file, "a") as f:
+                f.write(f"\n# pods CLI completion\n{completion_line}\n")
+            click.secho(f"Shell completion added to {rc_file}", fg="green")
     except subprocess.CalledProcessError as e:
         click.secho(f"Install failed: {e}", fg="red")
         return
@@ -256,6 +293,21 @@ def uninstall():
             subprocess.run("sudo rm -f /etc/systemd/system/pods.service", shell=True, check=True)
             subprocess.run("sudo systemctl daemon-reload 2>/dev/null", shell=True, capture_output=True)
             subprocess.run("sudo rm -f /usr/local/bin/pod", shell=True, check=True)
+
+        # remove shell completion
+        shell = os.environ.get("SHELL", "")
+        if "zsh" in shell:
+            rc_file = Path.home() / ".zshrc"
+        elif "fish" not in shell:
+            rc_file = Path.home() / ".bashrc"
+        else:
+            rc_file = None
+
+        if rc_file and rc_file.exists():
+            lines = rc_file.read_text().splitlines()
+            filtered = [l for l in lines if "# pods CLI completion" not in l and "_POD_COMPLETE" not in l]
+            rc_file.write_text("\n".join(filtered) + "\n")
+            click.secho(f"Shell completion removed from {rc_file}", fg="green")
 
         click.secho(f"Service uninstalled ({scope}).", fg="green")
     except subprocess.CalledProcessError as e:
