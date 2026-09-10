@@ -4,31 +4,41 @@ from sqlite3 import Row
 
 from . import database as db
 
+
+# create the db (via migration)
 def create_db():
     from . import migrate
+
     migrate.run()
+
 
 def create_pod(pod_name: str, content: str, project: str | None, category: str) -> int:
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(""" 
+    cursor.execute(
+        """
         INSERT INTO pods (pod_name, content, project, category)
         VALUES (?, ?, ?, ?)
-    """, (pod_name, content, project, category))
+    """,
+        (pod_name, content, project, category),
+    )
     # timestamps handled by DB triggers
 
     conn.commit()
-    pod_id : int = cursor.lastrowid if cursor.lastrowid else -1 # get the id of the newly created pod
+    pod_id: int = (
+        cursor.lastrowid if cursor.lastrowid else -1
+    )  # get the id of the newly created pod
     conn.close()
-    return pod_id;
+    return pod_id
+
 
 def get_pod(pod_id: int) -> dict | None:
     conn = db.get_connection()
     cursor = conn.cursor()
 
     cursor.execute("SELECT * FROM pods WHERE id = ? AND deleted_at IS NULL", (pod_id,))
-    row : Row = cursor.fetchone()
+    row: Row = cursor.fetchone()
 
     conn.close()
 
@@ -38,7 +48,13 @@ def get_pod(pod_id: int) -> dict | None:
         return None
 
 
-def find_pods(query: str | None = None, category: str | None = None, project: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
+def find_pods(
+    query: str | None = None,
+    category: str | None = None,
+    project: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
     conn = db.get_connection()
     cursor = conn.cursor()
 
@@ -81,12 +97,17 @@ AND p.deleted_at IS NULL"""
     return [dict(r) for r in rows]
 
 
-def update_pod(pod_id: int, pod_name: str | None = None, content: str | None = None,
-               project: str | None = None, category: str | None = None) -> dict | None:
-    
+def update_pod(
+    pod_id: int,
+    pod_name: str | None = None,
+    content: str | None = None,
+    project: str | None = None,
+    category: str | None = None,
+) -> dict | None:
+
     if not any([pod_name, content, project, category]):
-        print(f"Nothing to update for pod_id {pod_id}");
-        return None # nothing to update
+        print(f"Nothing to update for pod_id {pod_id}")
+        return None  # nothing to update
 
     conn = db.get_connection()
     cursor = conn.cursor()
@@ -109,9 +130,12 @@ def update_pod(pod_id: int, pod_name: str | None = None, content: str | None = N
 
     # updated_at handled by DB trigger
 
-    params.append(pod_id) # added ID for the WHERE clause
+    params.append(pod_id)  # added ID for the WHERE clause
 
-    cursor.execute(f"UPDATE pods SET {', '.join(fields)} WHERE id = ? AND deleted_at IS NULL", params)
+    cursor.execute(
+        f"UPDATE pods SET {', '.join(fields)} WHERE id = ? AND deleted_at IS NULL",
+        params,
+    )
     conn.commit()
     conn.close()
 
@@ -122,7 +146,10 @@ def delete_pod(pod_id: int) -> bool:
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("UPDATE pods SET deleted_at = datetime('now', 'localtime') WHERE id = ? AND deleted_at IS NULL", (pod_id,)) # soft delete
+    cursor.execute(
+        "UPDATE pods SET deleted_at = datetime('now', 'localtime') WHERE id = ? AND deleted_at IS NULL",
+        (pod_id,),
+    )  # soft delete
     conn.commit()
     deleted = cursor.rowcount > 0
     conn.close()
@@ -133,7 +160,9 @@ def list_categories() -> list[str]:
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT DISTINCT category FROM pods WHERE deleted_at IS NULL ORDER BY category")
+    cursor.execute(
+        "SELECT DISTINCT category FROM pods WHERE deleted_at IS NULL ORDER BY category"
+    )
     rows = cursor.fetchall()
     conn.close()
 
@@ -146,7 +175,9 @@ def list_projects() -> list[str]:
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT DISTINCT project FROM pods WHERE deleted_at IS NULL AND project IS NOT NULL ORDER BY project")
+    cursor.execute(
+        "SELECT DISTINCT project FROM pods WHERE deleted_at IS NULL AND project IS NOT NULL ORDER BY project"
+    )
     rows = cursor.fetchall()
     conn.close()
 
@@ -166,16 +197,19 @@ def seed_db() -> int:
 
     seed_path = Path(__file__).parent / "seed.json"
     if not seed_path.exists():
-        print("seed.json not found, skipping", file=__import__('sys').stderr)
+        print("seed.json not found, skipping", file=__import__("sys").stderr)
         return 0
 
     pods = json.loads(seed_path.read_text())
     count = 0
     for pod in pods:
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO pods (pod_name, content, category, project)
             VALUES (?, ?, ?, ?)
-        """, (pod["pod_name"], pod["content"], pod["category"], pod.get("project")))
+        """,
+            (pod["pod_name"], pod["content"], pod["category"], pod.get("project")),
+        )
         count += 1
 
     conn.commit()
