@@ -6,6 +6,7 @@
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
 
 import click
@@ -18,6 +19,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PID_FILE = SCRIPT_DIR / "pod.pid"
 
 VENV = SCRIPT_DIR / ".venv" / "bin" / "python"
+PYTHON = str(VENV) if VENV.exists() else sys.executable
 FILE_PATH = SCRIPT_DIR / "server.py"
 
 
@@ -38,8 +40,16 @@ def _is_server_running():
         return False
 
 
-def _do_start(port=None):
+def _do_start(port=None, tui=False):
     """Start the server in HTTP mode."""
+    if tui:
+        port = port or 8000
+        import uvicorn
+        from api import create_app
+        app = create_app()
+        uvicorn.run(app, host="0.0.0.0", port=port)
+        return
+
     if _is_server_running():
         click.secho("Server is already running.", fg="yellow")
         return
@@ -49,7 +59,7 @@ def _do_start(port=None):
 
     click.secho(f"Starting HTTP server on port {port}...", fg="blue")
     proc = subprocess.Popen(
-        [str(VENV), str(FILE_PATH), "--http", f"--port={port}"],
+        [PYTHON, str(FILE_PATH), "--http", f"--port={port}"],
     )
     PID_FILE.write_text(str(proc.pid))
     click.echo(f"Server started (PID: {proc.pid})")
@@ -100,28 +110,43 @@ def completion():
 @cli.command()
 def status():
     """Check the status of the pod."""
+    port = 8000
+    server_running = False
+
     # check systemd service first
     result = subprocess.run("systemctl --user is-active pods 2>/dev/null", shell=True, capture_output=True, text=True)
     if result.stdout.strip() == "active":
-        click.secho("Server is running (systemd).", fg="green")
-        # show PID
-        result = subprocess.run("systemctl --user show pods --property=MainPID --value", shell=True, capture_output=True, text=True)
-        if result.stdout.strip() and result.stdout.strip() != "0":
-            click.echo(f"PID: {result.stdout.strip()}")
-        return
+        server_running = True
 
     # fall back to PID file check
-    if PID_FILE.exists():
+    if not server_running and PID_FILE.exists():
         pid = int(PID_FILE.read_text())
         try:
             os.kill(pid, 0)
-            click.secho("Server is running.", fg="green")
-            click.echo(f"PID: {pid}")
+            server_running = True
         except ProcessLookupError:
-            click.secho("Server is NOT running (stale PID file).", fg="red")
             PID_FILE.unlink()
+
+    if server_running:
+        click.secho("Server:   running", fg="green")
+        # show PID
+        result = subprocess.run("systemctl --user show pods --property=MainPID --value", shell=True, capture_output=True, text=True)
+        pid = result.stdout.strip() if result.stdout.strip() and result.stdout.strip() != "0" else None
+        if pid:
+            click.echo(f"PID:      {pid}")
+        click.echo(f"Port:     {port}")
+        click.echo(f"URL:      http://localhost:{port}")
     else:
-        click.secho("Server is NOT running.", fg="red")
+        click.secho("Server:   NOT running", fg="red")
+
+    # check tunnel
+    url = tunnel.get_tunnel_url()
+    if url:
+        click.secho(f"\nTunnel:   {url}", fg="green")
+        if tunnel.has_oauth():
+            click.echo("OAuth:    enabled")
+    else:
+        click.secho("\nTunnel:   NOT running", fg="red")
 
 
 @cli.command()
@@ -178,16 +203,17 @@ def server():
 @server.command()
 @click.option("--local", is_flag=True, help="Run in local mode (stdio)")
 @click.option("--port", type=int, help="Port to listen on")
-def start(local, port):
+@click.option("--tui", is_flag=True, help="Run in foreground (for systemd)")
+def start(local, port, tui):
     """Start the server (local or HTTP mode)."""
     if local:
         click.secho("Starting in local mode (stdio)...", fg="green")
         click.echo("\n In the config, add the following command to run in local mode:")
         click.secho("pod server --local", fg="black", bg="green")
         click.echo("Running in local mode...")
-        os.execv(str(VENV), [str(VENV), str(FILE_PATH)])
+        os.execv(PYTHON, [PYTHON, str(FILE_PATH)])
     else:
-        _do_start(port)
+        _do_start(port, tui)
 
 
 # ./pod server stop
@@ -263,7 +289,8 @@ def install():
         # install service (replace placeholders with actual paths)
         subprocess.run(f"{sudo}mkdir -p {service_dir}", shell=True, check=True)
         service_content = (SCRIPT_DIR / "pods.service").read_text()
-        service_content = service_content.replace("PYTHON_PLACEHOLDER", str(VENV))
+        service_content = service_content.replace("VENV_PLACEHOLDER", PYTHON)
+        service_content = service_content.replace("POD_PLACEHOLDER", f"{bin_dir}/pod")
         service_content = service_content.replace("WorkingDirectory=%h/pods", f"WorkingDirectory={SCRIPT_DIR}")
         if sudo:
             subprocess.run(f"echo {repr(service_content)} | sudo tee {service_dir}/pods.service > /dev/null", shell=True, check=True)

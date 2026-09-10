@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=%h/pods
-ExecStart=PYTHON_PLACEHOLDER server.py --http
+ExecStart=VENV_PLACEHOLDER POD_PLACEHOLDER server start --tui
 Restart=on-failure
 RestartSec=5
 
