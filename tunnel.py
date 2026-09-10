@@ -10,7 +10,6 @@ NGROK_API = "http://localhost:4040/api/tunnels"
 NGROK_CONFIG = Path.home() / ".config" / "ngrok" / "ngrok.yml"
 
 
-
 def get_ngrok_token() -> str | None:
     """Return ngrok authtoken string or None."""
     if not NGROK_CONFIG.exists():
@@ -29,13 +28,18 @@ def get_tunnel_url() -> str | None:
         tunnels = json.loads(resp.read())
         for tunnel in tunnels.get("tunnels", []):
             return tunnel["public_url"]
-    except Exception:
-        pass
+    except (urllib.error.URLError, json.JSONDecodeError, KeyError) as e:
+        print(f"Failed to get tunnel URL: {e}")
     return None
 
 
 def ngrok_installed() -> bool:
-    return subprocess.run("which ngrok", shell=True, capture_output=True).returncode == 0
+    return (
+        subprocess.run(
+            "which ngrok", shell=True, capture_output=True, check=False
+        ).returncode
+        == 0
+    )
 
 
 def has_oauth() -> bool:
@@ -52,21 +56,26 @@ def register(cli):
     @cli.group()
     def tunnel():
         """Manage tunnel for remote access."""
-        pass
 
     @tunnel.command()
     def setup():
         """Setup ngrok tunnel with Google OAuth (one-time)."""
         if not ngrok_installed():
-            click.secho("ngrok not installed. Install: https://ngrok.com/download", fg="red")
+            click.secho(
+                "ngrok not installed. Install: https://ngrok.com/download", fg="red"
+            )
             return
 
         # authtoken
         token = get_ngrok_token()
         if not token:
-            t = click.prompt("Enter ngrok auth token (from https://dashboard.ngrok.com/get-started/your-authtoken)")
+            t = click.prompt(
+                "Enter ngrok auth token (from https://dashboard.ngrok.com/get-started/your-authtoken)"
+            )
             if t:
-                subprocess.run(f"ngrok config add-authtoken {t}", shell=True, check=True)
+                subprocess.run(
+                    f"ngrok config add-authtoken {t}", shell=True, check=True
+                )
                 click.secho("Auth token saved.", fg="green")
             else:
                 return
@@ -77,10 +86,12 @@ def register(cli):
         email = click.prompt("Enter your Google email for OAuth allow-list")
 
         # domain
-        domain = click.prompt("Enter your ngrok domain", default="glacier-mantra-siren.ngrok-free.dev")
+        domain = click.prompt(
+            "Enter your ngrok domain", default="glacier-mantra-siren.ngrok-free.dev"
+        )
 
         # write v3 config with traffic policy
-        config = f'''version: "3"
+        config = f"""version: "3"
 agent:
     authtoken: {get_ngrok_token()}
 endpoints:
@@ -98,16 +109,18 @@ endpoints:
             - "!(actions.ngrok.oauth.identity.email == '{email}')"
           actions:
             - type: deny
-'''
+"""
         NGROK_CONFIG.write_text(config)
         click.secho(f"Config written to {NGROK_CONFIG}", fg="green")
         click.secho("\nSetup complete! Run 'pod tunnel start' to start.", fg="green")
 
     @tunnel.command()
-    def start():
+    def start() -> None:
         """Start ngrok tunnel."""
         if not ngrok_installed():
-            click.secho("ngrok not installed. Install: https://ngrok.com/download", fg="red")
+            click.secho(
+                "ngrok not installed. Install: https://ngrok.com/download", fg="red"
+            )
             return
 
         if not get_ngrok_token():
@@ -132,12 +145,17 @@ endpoints:
             if has_oauth():
                 click.echo("OAuth enabled (Google login required)")
         else:
-            click.secho("Tunnel started but couldn't get URL. Check: curl http://localhost:4040", fg="yellow")
+            click.secho(
+                "Tunnel started but couldn't get URL. Check: curl http://localhost:4040",
+                fg="yellow",
+            )
 
     @tunnel.command()
     def stop():
         """Stop ngrok tunnel."""
-        subprocess.run("pkill -9 -f ngrok", shell=True, capture_output=True)
+        subprocess.run(
+            "pkill -9 -f ngrok", shell=True, capture_output=True, check=False
+        )
         click.echo("Tunnel stopped.")
 
     @tunnel.command()
