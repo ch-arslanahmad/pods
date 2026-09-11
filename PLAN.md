@@ -1,4 +1,3 @@
-
 # Pods Plan
 
 ## Goal
@@ -7,12 +6,12 @@ A scoped semantic memory system I actually use daily with my AI tools. Not a pro
 
 ## Phase Overview
 
-| Phase | What's Built | What's Left |
-|-------|--------------|-------------|
-| **Phase 1: Foundation** | `status` (hardcoded), `server` group (stubs) | Implement `server --local`, `server start`, `status` real check, `config` commands, make installable |
-| **Phase 2: Server Management** | `stop`, `restart`, `install`, `uninstall` (all `pass`) | Implement subprocess management, systemd integration |
-| **Phase 3: Tunnel Support** | Nothing | `tunnel start/stop/status`, detect cloudflared/ngrok |
-| **Phase 4: Future** | Nothing | Pod CRUD, logs, doctor, cross-platform |
+| Phase                          | What's Built                                           | What's Left                                                                                          |
+| ------------------------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| **Phase 1: Foundation**        | `status` (hardcoded), `server` group (stubs)           | Implement `server --local`, `server start`, `status` real check, `config` commands, make installable |
+| **Phase 2: Server Management** | `stop`, `restart`, `install`, `uninstall` (all `pass`) | Implement subprocess management, systemd integration                                                 |
+| **Phase 3: Tunnel Support**    | Nothing                                                | `tunnel start/stop/status`, detect cloudflared/ngrok                                                 |
+| **Phase 4: Future**            | Nothing                                                | Pod CRUD, logs, doctor, cross-platform                                                               |
 
 **Current state:** MCP server works (8 tools, REST API, migrations). CLI is a skeleton - doesn't manage anything yet.
 
@@ -20,18 +19,7 @@ A scoped semantic memory system I actually use daily with my AI tools. Not a pro
 
 One CLI, one path, two modes. User never touches `server.py` directly.
 
-| Command | What it does |
-|---------|--------------|
-| `pods server --local` | stdio mode (OpenCode spawns this) |
-| `pods server start` | HTTP mode (background) |
-| `pods server stop` | stop HTTP server |
-| `pods tunnel start` | expose to internet |
-| `pods tunnel stop` | stop tunnel |
-| `pods tunnel status` | show tunnel URL |
-| `pods status` | server status + tunnel URL |
-| `pods config init` | create config at ~/.config/pods/config.toml |
-| `pods config show` | print current config |
-| `pods config set KEY VAL` | update a value |
+See [features.md](features.md) for full command list.
 
 ## Stage 1, Local
 
@@ -56,13 +44,13 @@ One CLI, one path, two modes. User never touches `server.py` directly.
 
 **How it works:**
 
-| | stdio (`--local`) | HTTP (`start`) |
-|---|---|---|
-| Who runs it | OpenCode spawns `pods server --local` | You run `pods server start` |
-| Server process | Client manages lifecycle | Background process |
-| Communication | stdin/stdout | localhost:8000 |
-| Need systemd? | No | Optional |
-| Need tunnel? | No | Only for remote |
+|                | stdio (`--local`)                     | HTTP (`start`)              |
+| -------------- | ------------------------------------- | --------------------------- |
+| Who runs it    | OpenCode spawns `pods server --local` | You run `pods server start` |
+| Server process | Client manages lifecycle              | Background process          |
+| Communication  | stdin/stdout                          | localhost:8000              |
+| Need systemd?  | No                                    | Optional                    |
+| Need tunnel?   | No                                    | Only for remote             |
 
 **OpenCode config:**
 
@@ -84,6 +72,7 @@ Connector URL: http://localhost:8000/sse
 ```
 
 **Design decisions:**
+
 - **Unified CLI** - `pods` is the single entry point. User never touches `server.py` directly.
 - **Localhost first** - skip tunnel when on same machine. Add tunnel later for remote access.
 - **systemd optional** - user chooses auto-start or manual during `pods server install`.
@@ -107,26 +96,28 @@ See [`docs/deployment.md`](./docs/deployment.md) for setup instructions.
 
 ### CLI + Service
 
-See [`docs/cli-and-service.md`](./docs/cli-and-service.md) for the full plan.
-
-The `pods` CLI is the **single entry point** - user never touches `server.py` directly:
-
-```bash
-# Server management
-pods server start         # start HTTP mode (background)
-pods server --local       # stdio mode (for OpenCode to spawn)
-pods server stop          # stop HTTP server
-pods server install       # install as systemd service
-pods server uninstall     # remove systemd service
-
-# Status & config
-pods status               # see if server is running, DB stats
-pods config init          # set up config at ~/.config/pods/config.toml
-pods config show          # print current config
-pods config set KEY VAL   # update a value
-```
-
 **Key design point:** The CLI automatically uses the correct venv Python - user doesn't need to remember `.venv/bin/python` or activate the venv.
+
+See [features.md](features.md) for the full command reference.
+
+**Phases:**
+
+| Phase | What | Commands |
+|-------|------|----------|
+| 1 - Foundation | CLI exists, start server in both modes | `--version`, `status`, `server --local`, `server start`, `config init/show/set` |
+| 2 - Server Management | Full lifecycle | `server stop`, `server restart`, `server logs`, `server install`, `server uninstall` |
+| 3 - Tunnel Support | Expose to internet | `tunnel start`, `tunnel stop`, `tunnel status` |
+| 4 - Future | Build only when pain is felt | Pod CRUD, log viewer, config management, cross-platform service |
+
+**Code Organization:**
+
+Split when `pod` exceeds ~300 lines. Three concerns:
+
+1. **Entry point**, CLI group, version, small standalone commands (status, doctor, completion)
+2. **Server commands**, start, stop, restart, install, uninstall, logs. Bulk of the logic, distinct concern (systemd, process management)
+3. **Helpers**, shared functions used across commands (`_is_server_running`, `_do_start`, `_do_stop`)
+
+Don't create a file per command. Keep small commands in the entry point. Split only when a group of commands shares a distinct concern and the file is too long.
 
 **TODOs:**
 
@@ -145,16 +136,12 @@ pods config set KEY VAL   # update a value
 **What it is:** Same server, deployed with a public URL. Same tools, same DB (SQLite for now), just always-on.
 
 **What changes:**
+
 - Add tunnel (Cloudflare or ngrok) to expose server to internet
 - CLI detects tunnel and shows URL in `pods status`
 - Claude Web connects via tunnel URL
 
-**New CLI commands:**
-```bash
-pods tunnel start         # start cloudflare/ngrok tunnel
-pods tunnel stop          # stop tunnel
-pods tunnel status        # show tunnel URL
-```
+**New CLI commands:** See [features.md](features.md#tunnel-support).
 
 **Deploy options:** See [`docs/deployment.md`](./docs/deployment.md).
 
@@ -169,22 +156,8 @@ These describe the north-star. This PLAN.md describes what we actually build.
 
 ## Open Problems
 
-### Unwanted AI data pollution
-
-An AI agent with access to `pods_add` can insert data into the knowledge base without the user's explicit intent or awareness. Unlike a human manually adding an entry, an LLM may misinterpret context, fabricate information, or save trivial/incorrect data during a conversation. Over time, this dilutes the signal-to-noise ratio of the knowledge base, search results become less useful, curated categories get polluted, and the user loses trust that what they retrieve is accurate.
-
-The problem is compounded by scale: a single chat session could produce dozens of unintended writes before the user notices. And since the user didn't create the data, they may not recognize it as junk when they encounter it later.
-
-Not yet solved, thinking through approaches.
+See [problems.md](problems.md) for active bugs and scalability notes.
 
 ## Beyond (Unbounded)
 
-Build only when I feel the pain of not having it:
-
-- Semantic search
-- Teams / multi-user
-- Web dashboard
-- Browser extension
-- Export / import
-- Review queue
-- Anything else
+See [features.md](features.md) for the full feature registry.

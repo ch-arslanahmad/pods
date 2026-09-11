@@ -44,6 +44,7 @@ DB architecture, schema, search strategy, multi-tenancy, and deployment
 are documented in [`DB_PLANNING.md`](./DB_PLANNING.md).
 
 The three DB phases are:
+
 - **Phase 1** — Basic SQLite (keyword + structured filter search)
 - **Phase 2** — SQLite + sqlite-vec (adds semantic/vector search)
 - **Phase 3** — Postgres + pgvector (multi-tenant RLS, concurrent, scale)
@@ -77,8 +78,6 @@ Current implementation targets Phase 1. See `DB_PLANNING.md` for full details.
                     │  + pgvector        │
                     └────────────────────┘
 ```
-
-
 
 ### MCP Tools
 
@@ -116,58 +115,19 @@ Full CRUD endpoints under `/api/v1/pods`.
 
 ## Web UI
 
-Dashboard with:
-
-- Pod list with search bar + filter chips (category, project, session)
-- Create/edit,merge pod form (name, data, category, associations, visibility)
-- Pod detail view (metadata, embedding preview, edit)
-- Attach/detach associations (project/session/category picker)
-- Export/Import controls
-- Team management (invite members, roles)
-- API key management
-- LLM Extraction workflow: pick provider → paste/skip text → extract → copy to pod
+See [features.md](../features.md#web-ui) for the full feature list.
 
 ---
 
 ## Browser Extension
 
-Chrome/Firefox/Edge/Safari extension:
-
-- Capture full page or selection as pod
-- LLM extraction on save (summarize, bulletize, action items)
-- Choose project/session/category before saving
-- Authentication with API key to remote server
+See [features.md](../features.md#browser-extension) for the full feature list.
 
 ---
 
 ## LLM Extraction & Provenance
 
-```json
-{
-  "metadata": {
-    "extracted_by": {
-      "provider": "claude",
-      "model": "claude-sonnet-4",
-      "timestamp": "2026-05-23T10:00:00Z",
-      "preset": "summarize"
-    }
-  }
-}
-```
-
-Supported providers:
-The initial support will be of:
-- Claude,
-- ChatGPT (OpenAI)
-- Any Local Agent, (which have MCP support)
-
-As they allow the custom MCP server support.
-
-While currently the other platofrm do not support MCP, so a seperate method is needed (to be engineered):
-- Gemini
-- DeepSeek.
-
-Extraction presets: summarize, bulletize, action-items, metadata-extract, custom.
+See [features.md](../features.md#llm-extraction-presets) for extraction presets and [features.md](../features.md#provenance-tracking) for the provenance schema.
 
 ---
 
@@ -180,15 +140,17 @@ Extraction presets: summarize, bulletize, action-items, metadata-extract, custom
 - Filtering: queries filter by category, project, session, created_by, visibility.
 
 There are 3 ways to filter pods,
+
 - category, to categorize pods, self-explanatory
 - project, a project-related pods, context, info about the project.
 - sessions, a set of pods created within a persistant session.
-~~?: search across the data (semantic)~~
+  ~~?: search across the data (semantic)~~
 
 ### Sessions
 
 A session, pods created within a single AI conversation. For example, a session
 `"session_abc123"`, which tells:
+
 - place where a series of pods are created
 - a series of related pods generated.
 - where generated & who generated & when
@@ -197,7 +159,7 @@ They are optional, but quity handy if implemented, allows seemlessness with cont
 
 For example, i had a conversation with OpenCode on something, in which pods were created.
 
-Later i want to see/use those pods within that conversation only, without sessions, i cannot do that. 
+Later i want to see/use those pods within that conversation only, without sessions, i cannot do that.
 And after it i talk to Claude then ChatGPT on seperate stuff, session is the container that wraps the pods with that, allowing that which place, who created it and when...
 With sessions, later you can retrieve everything from that conversation you had with any platform.
 
@@ -206,7 +168,7 @@ This needs to be implemented in MCP, HTTPS (for extension/Web).
 ### Challanges
 
 - **MCP**, is request/response, no persistent connection or built-in session
-tracking. The session ID must be explicitly passed with every tool call.
+  tracking. The session ID must be explicitly passed with every tool call.
 - **HTTP**, possible however how would you generate sessions, unless a consistent connection is provided.
 - How would we handle the resume of a session if user continues his conversation later on.
 
@@ -222,13 +184,9 @@ tracking. The session ID must be explicitly passed with every tool call.
 
 ## Visibility & Permissions
 
-| Visibility | Who can see | Description |
-|------------|-------------|-------------|
-| private | Owner only | Default. Personal memory. |
-| team | Team members | Shared context within a team. |
-| public | Anyone (auth) | Publishable knowledge. |
+See [features.md](../features.md#team-sharing--visibility) for the visibility model.
 
-In Postgres, Row-level security (RLS)  enforces this at the query level — no app-level filtering needed.
+In Postgres, Row-level security (RLS) enforces this at the query level — no app-level filtering needed.
 
 ## Deployment
 

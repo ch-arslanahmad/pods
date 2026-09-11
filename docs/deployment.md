@@ -27,12 +27,13 @@ OpenCode connects directly via stdio — no network needed.
   "mcp": {
     "pods": {
       "type": "local",
-      "command": [".venv/bin/python", "server.py"], 
+      "command": [".venv/bin/python", "server.py"],
       "enabled": true
     }
   }
 }
 ```
+
 > [!important]
 > Replace the command path with the absolute path, `~/Desktop/github/pods/.venv/bin/python` if running from outside the project directory. Tools auto-discover on launch.
 
@@ -45,7 +46,6 @@ Use naturally: "save this as a pod".
 Download at, [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/)
 Free, no interstitial page, works with any AI tool out of the box.
 
-
 ### Usage
 
 ```bash
@@ -57,6 +57,7 @@ cloudflared tunnel --url http://localhost:8000
 ```
 
 Output looks like:
+
 ```
 Your quick Tunnel has been created! Visit it at:
 https://random-words.trycloudflare.com
@@ -65,7 +66,8 @@ https://random-words.trycloudflare.com
 ### Claude Web
 
 Add a connector in Claude Web:
-- ***Settings > Connectors > Add Connector***
+
+- _**Settings > Connectors > Add Connector**_
 - Name: `pods`
 - Server URL: `<url>/sse` (e.g. `https://random-words.trycloudflare.com/sse`)
 - Save
@@ -80,22 +82,20 @@ No headers needed, no interstitial — works with curl, browsers, and AI tools i
 
 ### Caveats
 
-| | Quick tunnel (`--url`) | Named tunnel (Zero Trust) |
-|---|---|---|
-| **URL** | Random, changes each restart | Your own domain, permanent |
-| **Cost** | Free | Free |
-| **Setup** | One command | Requires domain + DNS config |
-| **Restart** | New URL each time | Same URL always |
+|             | Quick tunnel (`--url`)       | Named tunnel (Zero Trust)    |
+| ----------- | ---------------------------- | ---------------------------- |
+| **URL**     | Random, changes each restart | Your own domain, permanent   |
+| **Cost**    | Free                         | Free                         |
+| **Setup**   | One command                  | Requires domain + DNS config |
+| **Restart** | New URL each time            | Same URL always              |
 
 The quick tunnel is fine for testing. For daily use, set up a [named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/).
-
 
 It is alternative to ngrok which also works but its free tier gives one consistent URL page & that URL has one constant content unless you pay pay.
 
 ### Install
 
 Download ngrok from [here.](https://ngrok.com/download/linux)
-
 
 ### Authenticate
 
@@ -117,7 +117,8 @@ ngrok http 8000 --url=<your-domain>.ngrok-free.dev
 ### Claude Web
 
 Add a connector in Claude Web:
-- ***Settings > Connectors > Add Connector***
+
+- _**Settings > Connectors > Add Connector**_
 - Name: `pods`
 - Server URL: `https://<your-domain>.ngrok-free.dev/sse` (or the ephemeral URL)
 - Save
