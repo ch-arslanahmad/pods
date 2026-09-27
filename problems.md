@@ -9,7 +9,7 @@
 
 **Fix:** `pods_find()` broadens the query to `WHERE (pods_fts MATCH ? OR p.category LIKE ? OR p.project LIKE ?)`. Handled by migration `002_fix_timestamps_and_indexes.py`.
 
-## Bug 2 - Timestamp format mismatch
+## Bug 2 - Timestamp format mismatch — Fixed
 
 **Symptom:** `created_at` = `08-08-2026,04:59:44` (DD-MM-YYYY) but `updated_at` = `2026-08-08 10:00:03` (YYYY-MM-DD) on the same row.
 
@@ -22,6 +22,24 @@ Live DB was created under the **old** default; `CREATE TABLE IF NOT EXISTS` neve
 **Side effect:** `ORDER BY created_at DESC` sorts wrong because DD-MM-YYYY and YYYY-MM-DD interleave lexically.
 
 **Fix:** Migration `002_fix_timestamps_and_indexes.py` rebuilt the table (new-table -> copy -> drop -> rename) so both columns use `datetime('now','localtime')` and converted existing rows. Dead duplicate DDL was removed from `database.py`; `schema.sql` is the single source of truth.
+
+## Bug 3 - Soft-delete corrupts FTS5 index (`database disk image is malformed`) — Fixed
+
+**Symptom:** create -> soft-delete -> create -> soft-delete throws
+`sqlite3.DatabaseError: database disk image is malformed` from the FTS5 trigger.
+Made `pods_delete` (and any UPDATE on `pods`) unusable; hit on the live DB too.
+
+**Root cause:** upstream SQLite bug — an external-content FTS5 sync trigger
+(`pods_fts_update`) gets corrupted by a second AFTER UPDATE trigger that issues a
+nested UPDATE on the same table (`set_pods_timestamp` bumping `updated_at`).
+Either trigger alone is fine; together they desync the FTS shadow tables.
+Reference: sqlite.org/bugs — "External-content FTS5 index corrupted by a second
+AFTER UPDATE trigger issuing a nested UPDATE on the content tab".
+Not caused by connection caching (reproduced with per-call connections).
+
+**Fix:** migration `004_drop_set_pods_timestamp.py` drops the `set_pods_timestamp`
+trigger and rebuilds the index. `updated_at` is now set by SQL in
+`update_pod()` / `delete_pod()` instead of a trigger. `schema.sql` updated to match.
 
 ## Open problem - Unwanted AI data pollution
 

@@ -39,7 +39,8 @@ MCP-native memory server for AI agents. Organize knowledge by project, session, 
 │   └── pods.db            SQLite database (gitignored)
 ├── tests/
 │   ├── conftest.py        pytest fixtures
-│   └── test_migrations.py Migration tests
+│   ├── test_migrations.py Migration tests
+│   └── test_backup.py     Backup/restore roundtrip tests
 ├── PLAN.md                True build plan
 ├── docs/                  Vision, architecture, gaps, troubleshooting, dev guide
 └── .claude/skills/        Repo-local skills
@@ -62,9 +63,8 @@ See [`docs/troubleshooting.md`](docs/troubleshooting.md) for install/dependency 
 
 | Status | Files                                                                                                                          |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| [x]    | server.py, api.py, db/database.py, db/db_operations.py, db/schema.sql, db/migrate.py, db/migrations/, tests/, requirements.txt |
+| [x]    | server.py, api.py, pod, tunnel.py, db/database.py, db/db_operations.py, db/schema.sql, db/migrate.py, db/migrations/, db/seed.json, tests/, requirements.txt |
 | [~]    | docs/pods.md (north-star, some gaps), PLAN.md (active), AGENTS.md (updated)                                                    |
-| thin   | db/seed.json (stub)                                                                                                            |
 
 ## Conventions
 
@@ -100,7 +100,7 @@ See [`docs/troubleshooting.md`](docs/troubleshooting.md) for install/dependency 
 | 2   | **No provenance (`created_by`)** — can't tell user vs AI pods    | Open   | Add `created_by` param (optional string) to `pods_add`                                                                                                                          |
 | 3   | **No pagination/limit** — `pods_find` returns every matching row | Fixed  | `limit` and `offset` params implemented on `pods_find`                                                                                                                          |
 | 4   | **No search ranking** — FTS5 BM25 scores thrown away             | Open   | Return `rank` from FTS5 or use `bm25()`                                                                                                                                         |
-| 5   | **No time-based filtering** — can't ask "pods from today"        | Open   | Add `created_after` / `created_before` to `pods_find`                                                                                                                           |
+| 5   | **No time-based filtering** — can't ask "pods from today"        | Fixed  | `created_after` / `created_before` (YYYY-MM-DD) on `pods_find`, `db.find_pods`, REST `/api/pods`                                                            |
 | 6   | **Duplicates exist** — no dedup detection                        | Open   | Check before insert or `UNIQUE` constraint on `(pod_name, content, project)`                                                                                                    |
 | 7   | **Timestamps mismatch** — default and trigger formats diverged   | Fixed  | Migration 002 (`002_fix_timestamps_and_indexes.py`) rebuilt table with `datetime('now','localtime')` defaults, normalized existing rows, rebuilt FTS with category/project |
 
@@ -110,29 +110,29 @@ Pydantic works natively with FastMCP. Use `Field(min_length=1, max_length=200)` 
 
 ### Minor Fixes
 
-- **Return format:** `pods_add` returns int, `pods_find` returns dicts, `pods_delete` returns bool — inconsistent
+- ~~**Return format:** `pods_add` returns int, `pods_find` returns dicts, `pods_delete` returns bool — inconsistent~~ **Fixed** — all tools return dicts now (breaking)
 - ~~**Typo `Iidx_pods_category`** in `db/database.py:37` — double `i`~~ **Fixed**
-- **Connection per call** — opens+closes on every invocation. Fine at low scale, bad pattern long-term
-- **Rename `create_db()` → `ensure_schema()`** in `db/db_operations.py:9` — name implies it creates the DB, but it only runs migrations. Misleading.
+- ~~**Connection per call** — opens+closes on every invocation~~ **Fixed** — `db/database.py` caches one connection per `DB_PATH`; write ops rollback on error so the shared conn never holds a stale txn
+- ~~**`set_pods_timestamp` trigger corrupts FTS5** — nested UPDATE + external-content sync trigger = `database disk image is malformed` on UPDATE~~ **Fixed** — migration 004 drops the trigger (upstream SQLite bug), `updated_at` set by SQL in `update_pod()`/`delete_pod()`, index rebuilt
+- ~~**Rename `create_db()` → `ensure_schema()`** in `db/db_operations.py:9` — name implies it creates the DB, but it only runs migrations. Misleading.~~ **Fixed**
 
 ### Code Smells
 
-- **Auto-migration on startup** (`server.py:91` → `db.create_db()` → `migrate.run()`) — runs every time the server boots. Fine for single-dev SQLite, but should become an explicit `migrate deploy` step before multi-instance or prod deployment. Idempotent today, but masks failures silently.
+- ~~**Auto-migration on startup** — masks failures silently~~ **Improved** — boot still auto-migrates (single-dev convenience) but failures print to stderr and exit non-zero; `pod migrate` runs them explicitly. Make it a hard `migrate deploy` step before multi-instance/prod.
 
 ### Dead Code
 
-| Item             | Location              | Action                                                                    |
-| ---------------- | --------------------- | ------------------------------------------------------------------------- |
-| `pod_tags` table | `db/schema.sql:14-18` | Not wired up yet. Add `tags` param to `pods_add`/`pods_update` when ready |
-| `pods_ping` tool | `server.py:73-74`     | Returns `"pong"`. MCP has its own ping. Remove when convenient            |
+- None. `pod_tags` dropped by migration 003 (`003_drop_pod_tags.py`), removed from `schema.sql`.
+
+**`pods_ping` is intentional and needed** — keep it. Do not remove, do not flag as dead code.
 
 ### Priority
 
 | Priority | Item                                                                                                             |
 | -------- | ---------------------------------------------------------------------------------------------------------------- |
-| Done     | `get_pod` soft deletes, `deleted_at = 1`, Pydantic validation, pagination/limit                                  |
-| Next     | Backup (feature #1), Merge pods (feature #2), Provenance (`created_by`)                                          |
-| Later    | Sessions, search ranking (BM25), time-based filtering, dedup, remove `pod_tags`, remove `pods_ping`              |
+| Done     | `get_pod` soft deletes, `deleted_at = 1`, Pydantic validation, pagination/limit, Backup (`pod backup` / `pod restore` + restore pre-flight), time filters (`created_after`/`created_before`), dict return shapes, `ensure_schema()` rename, cached connection, `pod migrate`, `pod_tags` dropped, loud startup migrations, `set_pods_timestamp` dropped (FTS corruption) |
+| Next     | Search quality: BM25 rank on `pods_find`, dedup; Sessions scoping                                                |
+| Later    | Provenance (`created_by`), Merge pods, Export/import, Team sharing                                               |
 
 ## Feature Ideas
 

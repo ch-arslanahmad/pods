@@ -58,6 +58,9 @@ Unified CLI entry point. User never touches `server.py` directly.
 | `pods status` | server status + tunnel URL | done |
 | `pods doctor` | check installation health | done |
 | `pods completion` | shell completion setup instructions | done |
+| `pods backup` | SQLite backup API copy to `db/backups/` (timestamped, WAL-safe) | done |
+| `pods restore --path <file>` | restore a backup (integrity pre-flight, auto-backup first) | done |
+| `pods migrate` | apply pending migrations (runs at boot too; fails loud) | done |
 | `pods config init` | create config at ~/.config/pods/config.toml | proposed |
 | `pods config show` | print current config | proposed |
 | `pods config set KEY VAL` | update a value | proposed |

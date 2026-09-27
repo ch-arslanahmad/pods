@@ -9,7 +9,7 @@ Organize knowledge by project, session, and category.
 | Tool | Description |
 |------|-------------|
 | `pods_find` | Search (FTS5) or list with optional category/project filters |
-| `pods_add` | Store a memory with category, project, session |
+| `pods_add` | Store a memory with category, project |
 | `pods_get` | Get pod by ID |
 | `pods_update` | Patch pod fields |
 | `pods_delete` | Soft delete |

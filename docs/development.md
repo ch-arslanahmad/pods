@@ -53,10 +53,10 @@ python3 -m pytest tests/
 ## Database Migrations
 
 The database uses sequential migration files in `db/migrations/`. Migrations run
-automatically when the server starts (`python3 server.py` or `python3 server.py --http`). To run migrations manually:
+automatically when the server starts (`python3 server.py` or `python3 server.py --http`), and failures abort startup. To run migrations manually:
 
 ```bash
-python3 -c "from db.migrate import run_migrations; run_migrations()"
+./pod migrate
 ```
 
 New migrations are numbered (e.g. `001_initial_schema.py`, `002_fix_timestamps_and_indexes.py`).
