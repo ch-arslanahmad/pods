@@ -65,14 +65,10 @@ def apply_pending(conn: sqlite3.Connection, migrations_dir: Path | None = None) 
 
 
 def run(connection: sqlite3.Connection | None = None, migrations_dir: Path | None = None) -> None:
-    conn = connection
-    close = False
-    if conn is None:
-        from . import database as db
-        conn = db.get_connection()
-        close = True
-    try:
-        apply_pending(conn, migrations_dir)
-    finally:
-        if close:
-            conn.close()
+    if connection is not None:
+        apply_pending(connection, migrations_dir)
+        return
+
+    from . import database as db
+
+    apply_pending(db.get_connection(), migrations_dir)  # shared cached conn — never close here

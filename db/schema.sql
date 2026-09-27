@@ -10,12 +10,7 @@ CREATE TABLE IF NOT EXISTS pods (
     deleted_at  TEXT                           -- soft delete; never hard-delete rows
 );
 
--- reserved for future multi-tag support (not yet wired to any tool)
-CREATE TABLE IF NOT EXISTS pod_tags (
-    pod_id  INTEGER NOT NULL REFERENCES pods(id), -- foreign key to pods.id
-    tag     TEXT NOT NULL,
-    PRIMARY KEY (pod_id, tag)
-);
+-- pod_tags dropped (migration 003) — tags return as a fresh feature if ever needed
 
 CREATE INDEX IF NOT EXISTS idx_pods_category ON pods(category);
 CREATE INDEX IF NOT EXISTS idx_pods_project  ON pods(project);
@@ -26,13 +21,9 @@ CREATE VIRTUAL TABLE IF NOT EXISTS pods_fts USING fts5(
     content_rowid='id'
 );
 
--- update the updated_at column to current timestamp when existing row is updated
-CREATE TRIGGER IF NOT EXISTS set_pods_timestamp
-AFTER UPDATE ON pods
-BEGIN
-    UPDATE pods SET updated_at = datetime('now', 'localtime')
-    WHERE id = NEW.id;
-END;
+-- set_pods_timestamp trigger removed (migration 004): a second AFTER UPDATE
+-- trigger with a nested UPDATE corrupts the external-content FTS5 index
+-- (upstream SQLite bug). updated_at is set by SQL in update_pod/delete_pod.
 
 -- after insert: add new pod to the search index
 CREATE TRIGGER IF NOT EXISTS pods_fts_insert AFTER INSERT ON pods BEGIN

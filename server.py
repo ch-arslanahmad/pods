@@ -101,7 +101,11 @@ def pods_project_context(project: str) -> str:
 
 
 if __name__ == "__main__":
-    db.ensure_schema()
+    try:
+        db.ensure_schema()
+    except Exception as e:
+        print(f"migration failed: {e}", file=sys.stderr, flush=True)
+        raise SystemExit(1)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--http", action="store_true", help="Run in HTTP mode (SSE + REST API)")

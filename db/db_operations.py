@@ -20,42 +20,64 @@ def backup(dest_dir: Path = Path("backups")) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     src = db.get_connection()
 
-    dest = dest_dir / f"pods-{datetime.now():%Y-%m-%d_%H-%M-%S}.db"
+    # microseconds — two backups in the same second must never collide
+    # (a colliding auto-backup would overwrite the file restore() is reading)
+    dest = dest_dir / f"pods-{datetime.now():%Y-%m-%d_%H-%M-%S-%f}.db"
 
     dst = sql.connect(dest)
     src.backup(dst)
-    dst.close()
-    src.close()
+    dst.close()  # file-local conn; src is the shared cached conn
     return dest
 
 
 def restore(backup_path: Path) -> None:
-    dst = db.get_connection()
+    if not backup_path.exists():
+        raise sql.DatabaseError(f"backup file not found: {backup_path}")
 
+    # pre-flight: never touch live db until backup proven good
     src = sql.connect(backup_path)
+    try:
+        status = src.execute("PRAGMA integrity_check").fetchone()[0]
+        tables = src.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()[0]
+    except sql.DatabaseError as e:
+        src.close()
+        raise sql.DatabaseError(f"not a valid sqlite backup: {backup_path}") from e
+    if status != "ok":
+        src.close()
+        raise sql.DatabaseError(f"backup file corrupt: {backup_path} ({status})")
+    if tables == 0:
+        src.close()
+        raise sql.DatabaseError(f"not a pods backup (no tables): {backup_path}")
+
+    # snapshot current db before overwriting — insurance if restore goes wrong
+    backup()
+
+    dst = db.get_connection()
     src.backup(dst)
-    dst.close()
-    src.close()
+    src.close()  # file-local conn; dst is the shared cached conn
 
 
 def create_pod(pod_name: str, content: str, project: str | None, category: str) -> int:
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
+    try:
+        cursor.execute(
+            """
         INSERT INTO pods (pod_name, content, project, category)
         VALUES (?, ?, ?, ?)
     """,
-        (pod_name, content, project, category),
-    )
-    # timestamps handled by DB triggers
+            (pod_name, content, project, category),
+        )
+        # timestamps handled by DB triggers
 
-    conn.commit()
+        conn.commit()
+    except sql.Error:
+        conn.rollback()  # cached conn: don't leave a half-open txn behind
+        raise
     pod_id: int = (
         cursor.lastrowid if cursor.lastrowid else -1
     )  # get the id of the newly created pod
-    conn.close()
     return pod_id
 
 
@@ -65,8 +87,6 @@ def get_pod(pod_id: int) -> dict | None:
 
     cursor.execute("SELECT * FROM pods WHERE id = ? AND deleted_at IS NULL", (pod_id,))
     row: Row = cursor.fetchone()
-
-    conn.close()
 
     if row:
         return dict(row)
@@ -111,29 +131,28 @@ AND p.deleted_at IS NULL"""
 
         cursor.execute(search_sql, params)
     else:
-        sql = "SELECT * FROM pods WHERE deleted_at IS NULL"
+        q = "SELECT * FROM pods WHERE deleted_at IS NULL"
         params: list = []
 
         if category:
-            sql += " AND category = ?"
+            q += " AND category = ?"
             params.append(category)
         if project:
-            sql += " AND project = ?"
+            q += " AND project = ?"
             params.append(project)
         if created_after:
-            sql += " AND date(created_at) >= date(?)"
+            q += " AND date(created_at) >= date(?)"
             params.append(created_after)
         if created_before:
-            sql += " AND date(created_at) <= date(?)"
+            q += " AND date(created_at) <= date(?)"
             params.append(created_before)
 
-        sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        q += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
-        cursor.execute(sql, params)
+        cursor.execute(q, params)
 
     rows = cursor.fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -168,16 +187,19 @@ def update_pod(
         fields.append("category = ?")
         params.append(category)
 
-    # updated_at handled by DB trigger
+    fields.append("updated_at = datetime('now', 'localtime')")
 
     params.append(pod_id)  # added ID for the WHERE clause
 
-    cursor.execute(
-        f"UPDATE pods SET {', '.join(fields)} WHERE id = ? AND deleted_at IS NULL",
-        params,
-    )
-    conn.commit()
-    conn.close()
+    try:
+        cursor.execute(
+            f"UPDATE pods SET {', '.join(fields)} WHERE id = ? AND deleted_at IS NULL",
+            params,
+        )
+        conn.commit()
+    except sql.Error:
+        conn.rollback()
+        raise
 
     return get_pod(pod_id)
 
@@ -186,14 +208,18 @@ def delete_pod(pod_id: int) -> bool:
     conn = db.get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        "UPDATE pods SET deleted_at = datetime('now', 'localtime') WHERE id = ? AND deleted_at IS NULL",
-        (pod_id,),
-    )  # soft delete
-    conn.commit()
-    deleted = cursor.rowcount > 0
-    conn.close()
-    return deleted
+    try:
+        cursor.execute(
+            "UPDATE pods SET deleted_at = datetime('now', 'localtime'), "
+            "updated_at = datetime('now', 'localtime') "
+            "WHERE id = ? AND deleted_at IS NULL",
+            (pod_id,),
+        )  # soft delete
+        conn.commit()
+    except sql.Error:
+        conn.rollback()
+        raise
+    return cursor.rowcount > 0
 
 
 def list_categories() -> list[str]:
@@ -204,7 +230,6 @@ def list_categories() -> list[str]:
         "SELECT DISTINCT category FROM pods WHERE deleted_at IS NULL ORDER BY category"
     )
     rows = cursor.fetchall()
-    conn.close()
 
     results = [r["category"] for r in rows]
 
@@ -219,7 +244,6 @@ def list_projects() -> list[str]:
         "SELECT DISTINCT project FROM pods WHERE deleted_at IS NULL AND project IS NOT NULL ORDER BY project"
     )
     rows = cursor.fetchall()
-    conn.close()
 
     results = [r["project"] for r in rows]
 
@@ -232,7 +256,6 @@ def seed_db() -> int:
 
     cursor.execute("SELECT COUNT(*) FROM pods")
     if cursor.fetchone()[0] > 0:
-        conn.close()
         return 0
 
     seed_path = Path(__file__).parent / "seed.json"
@@ -242,16 +265,18 @@ def seed_db() -> int:
 
     pods = json.loads(seed_path.read_text())
     count = 0
-    for pod in pods:
-        cursor.execute(
-            """
+    try:
+        for pod in pods:
+            cursor.execute(
+                """
             INSERT INTO pods (pod_name, content, category, project)
             VALUES (?, ?, ?, ?)
         """,
-            (pod["pod_name"], pod["content"], pod["category"], pod.get("project")),
-        )
-        count += 1
-
-    conn.commit()
-    conn.close()
+                (pod["pod_name"], pod["content"], pod["category"], pod.get("project")),
+            )
+            count += 1
+        conn.commit()
+    except sql.Error:
+        conn.rollback()
+        raise
     return count

@@ -134,6 +134,17 @@ def restore(backup_path: Path) -> None:
 
 
 @cli.command()
+def migrate() -> None:
+    """Apply pending database migrations."""
+    try:
+        db.ensure_schema()
+        click.echo("Schema up to date.")
+    except Exception as e:
+        click.echo(f"Migration failed: {e}")
+        raise SystemExit(1)
+
+
+@cli.command()
 def completion():
     """Show shell completion setup instructions."""
     shell = os.environ.get("SHELL", "")
