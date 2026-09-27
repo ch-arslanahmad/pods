@@ -7,8 +7,8 @@ from sqlite3 import Row
 from . import database as db
 
 
-# create the db (via migration)
-def create_db():
+# apply pending migrations (schema = migrations, not "create db")
+def ensure_schema():
     from . import migrate
 
     migrate.run()
@@ -80,6 +80,8 @@ def find_pods(
     project: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    created_after: str | None = None,
+    created_before: str | None = None,
 ) -> list[dict]:
     conn = db.get_connection()
     cursor = conn.cursor()
@@ -97,6 +99,12 @@ AND p.deleted_at IS NULL"""
         if category:
             search_sql += " AND p.category = ?"
             params.append(category)
+        if created_after:
+            search_sql += " AND date(p.created_at) >= date(?)"
+            params.append(created_after)
+        if created_before:
+            search_sql += " AND date(p.created_at) <= date(?)"
+            params.append(created_before)
 
         search_sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
@@ -112,6 +120,12 @@ AND p.deleted_at IS NULL"""
         if project:
             sql += " AND project = ?"
             params.append(project)
+        if created_after:
+            sql += " AND date(created_at) >= date(?)"
+            params.append(created_after)
+        if created_before:
+            sql += " AND date(created_at) <= date(?)"
+            params.append(created_before)
 
         sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])

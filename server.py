@@ -13,15 +13,18 @@ mcp = FastMCP(
 )  # 0.0.0.0 required for ngrok tunnel — 127.0.0.1 triggers DNS rebinding protection that blocks ngrok's Host header
 
 
-@mcp.tool(description="Add a new knowledge pod. Provide pod_name, category, content & project(optional).")
+@mcp.tool(description="Add a new knowledge pod. Provide pod_name, category, content & project(optional). Returns the created pod.")
 def pods_add(
     pod_name: str = Field(min_length=1, max_length=200),
     content: str = Field(min_length=1),
     category: str = Field(min_length=1, max_length=100),
     project: str | None = None,
-) -> int:
-    return db.create_pod(pod_name, content, project, category)
-
+) -> dict:
+    pod_id = db.create_pod(pod_name, content, project, category)
+    return {
+    "message": "pod created",
+    "pod_id": pod_id
+    }
 
 @mcp.tool(description="Retrieve a pod by unique ID. Returns None if not found or soft-deleted.")
 def pods_get(
@@ -44,8 +47,8 @@ def pods_update(
 @mcp.tool(description="Soft-delete a pod by ID. hidden but not permanently removed.")
 def pods_delete(
     pod_id: int = Field(gt=0),
-) -> bool:
-    return db.delete_pod(pod_id)
+) -> dict:
+    return {"deleted": db.delete_pod(pod_id), "id": pod_id}
 
 
 @mcp.tool(description="List all distinct category labels used across pods.")
@@ -53,15 +56,25 @@ def pods_list_categories() -> list[str]:
     return db.list_categories()
 
 
-@mcp.tool(description="Search or list pods. Provide query for FTS5 full-text search (matches pod_name/content), or use category/project to filter. Returns newest first with 50 results, to get more results, increase the limit variable.")
+@mcp.tool(description="Search or list pods. Provide query for FTS5 full-text search (matches pod_name/content), or use category/project to filter. created_after/created_before filter by date (YYYY-MM-DD). Returns newest first with 50 results, to get more results, increase the limit variable.")
 def pods_find(
     query: str | None = None,
     category: str | None = None,
     project: str | None = None,
     limit: int = Field(default=50, ge=1),
     offset: int = Field(default=0, ge=0),
+    created_after: str | None = None,
+    created_before: str | None = None,
 ) -> list[dict]:
-    return db.find_pods(query=query, category=category, project=project, limit=limit, offset=offset)
+    return db.find_pods(
+        query=query,
+        category=category,
+        project=project,
+        limit=limit,
+        offset=offset,
+        created_after=created_after,
+        created_before=created_before,
+    )
 
 
 @mcp.tool(description="List all distinct project labels used across pods.")
@@ -88,7 +101,7 @@ def pods_project_context(project: str) -> str:
 
 
 if __name__ == "__main__":
-    db.create_db()
+    db.ensure_schema()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--http", action="store_true", help="Run in HTTP mode (SSE + REST API)")

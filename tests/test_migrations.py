@@ -27,6 +27,12 @@ def count_applied(conn: sqlite3.Connection) -> int:
     return conn.execute(f"SELECT COUNT(*) FROM {migrate.MIGRATIONS_TABLE}").fetchone()[0]
 
 
+def migration_count() -> int:
+    """Number of real migration files (excludes __init__ etc)."""
+    mdir = Path(__file__).parent.parent / "db" / "migrations"
+    return len([p for p in mdir.glob("*.py") if not p.name.startswith("_")])
+
+
 class TestInitialMigration:
     def test_creates_all_tables(self, conn):
         migrate.run(connection=conn)
@@ -51,14 +57,14 @@ class TestInitialMigration:
             "SELECT name FROM sqlite_master WHERE type='trigger'"
         ).fetchall()}
         assert "set_pods_timestamp" in triggers
-        assert "pods_fts_ai" in triggers
-        assert "pods_fts_au" in triggers
+        assert "pods_fts_insert" in triggers
+        assert "pods_fts_update" in triggers
 
     def test_idempotent(self, conn):
         migrate.run(connection=conn)
-        assert count_applied(conn) == 1
+        assert count_applied(conn) == migration_count()
         migrate.run(connection=conn)
-        assert count_applied(conn) == 1
+        assert count_applied(conn) == migration_count()
 
     def test_records_migration(self, conn):
         migrate.run(connection=conn)

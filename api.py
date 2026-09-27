@@ -21,6 +21,8 @@ OPENAPI_SPEC = {
                     {"name": "project", "in": "query", "schema": {"type": "string"}, "description": "Filter by exact project"},
                     {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50, "minimum": 1, "maximum": 1000}},
                     {"name": "offset", "in": "query", "schema": {"type": "integer", "default": 0, "minimum": 0}},
+                    {"name": "created_after", "in": "query", "schema": {"type": "string"}, "description": "Only pods created on/after this date (YYYY-MM-DD)"},
+                    {"name": "created_before", "in": "query", "schema": {"type": "string"}, "description": "Only pods created on/before this date (YYYY-MM-DD)"},
                 ],
                 "responses": {"200": {"description": "List of pods"}},
             },
@@ -103,6 +105,8 @@ async def list_pods(request):
         project=params.get("project"),
         limit=int(params.get("limit", 50)),
         offset=int(params.get("offset", 0)),
+        created_after=params.get("created_after"),
+        created_before=params.get("created_before"),
     )
     return await _json(pods)
 
@@ -124,7 +128,7 @@ async def create_pod(request):
             category=body["category"],
             project=body.get("project"),
         )
-        return await _json({"id": pod_id}, 201)
+        return await _json(db.get_pod(pod_id), 201)
     except KeyError as e:
         return await _error(f"Missing required field: {e}")
     except Exception as e:
