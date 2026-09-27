@@ -1,4 +1,6 @@
 import json
+import sqlite3 as sql
+from datetime import datetime
 from pathlib import Path
 from sqlite3 import Row
 
@@ -10,6 +12,30 @@ def create_db():
     from . import migrate
 
     migrate.run()
+
+
+def backup(dest_dir: Path = Path("backups")) -> Path:
+    dest_dir = db.DB_PATH.parent / dest_dir
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    src = db.get_connection()
+
+    dest = dest_dir / f"pods-{datetime.now():%Y-%m-%d_%H-%M-%S}.db"
+
+    dst = sql.connect(dest)
+    src.backup(dst)
+    dst.close()
+    src.close()
+    return dest
+
+
+def restore(backup_path: Path) -> None:
+    dst = db.get_connection()
+
+    src = sql.connect(backup_path)
+    src.backup(dst)
+    dst.close()
+    src.close()
 
 
 def create_pod(pod_name: str, content: str, project: str | None, category: str) -> int:

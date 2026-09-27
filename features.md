@@ -8,14 +8,14 @@ Single source of truth for all proposed features, bugs, and ideas.
 
 ## Backup
 
-**Status:** next - **Priority #1 (first to develop)**
+**Status:** done - **Priority #1 (first to develop)**
 
 Automatic backup of the memory store. The DB *is* the memory, losing it loses everything.
 
 **How:**
-- `pods backup` command: copy `pods.db` to a timestamped file (e.g. `backups/pods-2026-08-11.db`)
-- Optional daily cron for hands-free backups
-- Restore = copy the file back (SQLite backup is just a file copy)
+- `pod backup` command: SQLite backup API copy of `pods.db` to a timestamped file (e.g. `db/backups/pods-2026-09-27_19-00-18.db`) — WAL-safe
+- `pod restore --path <file>`: restore a backup (refuses while server is running)
+- Optional daily cron for hands-free backups — not built yet
 
 **Why now:** simplest feature with the highest value, ~10 lines, and it protects everything else in this registry. No backup mechanism exists today.
 
