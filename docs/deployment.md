@@ -114,6 +114,22 @@ ngrok http 8000
 ngrok http 8000 --url=<your-domain>.ngrok-free.dev
 ```
 
+### Tunnel OAuth (optional)
+
+`pod tunnel setup` writes an ngrok traffic policy that requires Google login and
+allow-lists one email. That is a browser gate at the proxy, not MCP OAuth.
+
+To skip it and let pods handle authentication itself (see
+[OAuth.md](OAuth.md)):
+
+```bash
+pod tunnel setup --no-oauth
+pod tunnel start
+```
+
+The named domain is still required — OAuth client registrations and redirect
+URIs are bound to it. `pod tunnel status` reports which mode is active.
+
 ### Claude Web
 
 Add a connector in Claude Web:

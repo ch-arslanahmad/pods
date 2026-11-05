@@ -76,6 +76,32 @@ See [`docs/troubleshooting.md`](docs/troubleshooting.md) for install/dependency 
 - **Pin `mcp<2.0.0`** — v2 renamed `FastMCP` to `MCPServer`, which breaks existing code. Do not upgrade without migrating server.py
 - PRs must contain **multiple small, meaningful commits** — never a single big commit
 
+## Key Dev Decisions
+
+- Use `Field()` directly on function params (not a shared model class) so each MCP tool exposes only its own fields in the schema
+- Single `pods_fts_au` trigger handles all update types (content change, soft-delete, undelete) via conditional re-insert
+- Required fields have no default (Pydantic enforces); optional fields use `= None`
+- SQLite parenthesized defaults: `DEFAULT (datetime('now','localtime'))` — SQLite requires parens for function calls
+- FTS5 has no UPDATE — must delete then insert
+- `updated_at` set by SQL in `update_pod()`/`delete_pod()`, never by trigger (trigger + FTS sync = corruption, see problems.md Bug 3)
+
+## Docs Map
+
+Canonical location for each topic — check here before searching the repo:
+
+| Topic | File |
+| ----- | ---- |
+| Repo state, conventions, gaps, priorities | `AGENTS.md` (this file) |
+| Open/fixed bugs, scalability, AI data pollution | `problems.md` |
+| Feature ideas | `features.md` |
+| Build plan | `PLAN.md` |
+| Running modes, tests, migrations | `docs/development.md` |
+| Tunnels (cloudflared/ngrok), Claude Web, REST API | `docs/deployment.md` |
+| OAuth concepts, MCP auth flow, auth design | `docs/OAuth.md` |
+| Install/dependency issues | `docs/troubleshooting.md` |
+| Pydantic/FastMCP learnings | `docs/learning.md` |
+| North-star product spec | `docs/pods.md` |
+
 ## Skill Activation
 
 | Task                  | Load skill                                 |
@@ -131,7 +157,7 @@ Pydantic works natively with FastMCP. Use `Field(min_length=1, max_length=200)` 
 | Priority | Item                                                                                                             |
 | -------- | ---------------------------------------------------------------------------------------------------------------- |
 | Done     | `get_pod` soft deletes, `deleted_at = 1`, Pydantic validation, pagination/limit, Backup (`pod backup` / `pod restore` + restore pre-flight), time filters (`created_after`/`created_before`), dict return shapes, `ensure_schema()` rename, cached connection, `pod migrate`, `pod_tags` dropped, loud startup migrations, `set_pods_timestamp` dropped (FTS corruption) |
-| Next     | Search quality: BM25 rank on `pods_find`, dedup; Sessions scoping                                                |
+| Next     | **Token efficiency (High):** smaller default `limit`, `has_more`/total, field projection; Search quality: BM25 rank on `pods_find`, dedup; Sessions scoping |
 | Later    | Provenance (`created_by`), Merge pods, Export/import, Team sharing                                               |
 
 ## Feature Ideas
