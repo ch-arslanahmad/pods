@@ -58,8 +58,13 @@ def register(cli):
         """Manage tunnel for remote access."""
 
     @tunnel.command()
-    def setup():
-        """Setup ngrok tunnel with Google OAuth (one-time)."""
+    @click.option(
+        "--no-oauth",
+        is_flag=True,
+        help="Skip the Google OAuth gate; pods handles authentication itself.",
+    )
+    def setup(no_oauth: bool) -> None:
+        """Setup ngrok tunnel (one-time)."""
         if not ngrok_installed():
             click.secho(
                 "ngrok not installed. Install: https://ngrok.com/download", fg="red"
@@ -82,16 +87,30 @@ def register(cli):
         else:
             click.secho("Auth token already configured.", fg="green")
 
-        # email for OAuth
-        email = click.prompt("Enter your Google email for OAuth allow-list")
-
         # domain
         domain = click.prompt(
             "Enter your ngrok domain", default="glacier-mantra-siren.ngrok-free.dev"
         )
 
-        # write v3 config with traffic policy
-        config = f"""version: "3"
+        if no_oauth:
+            config = f"""version: "3"
+agent:
+    authtoken: {get_ngrok_token()}
+endpoints:
+  - name: pods
+    url: https://{domain}
+    upstream:
+      url: 8000
+"""
+            click.secho(
+                "Tunnel OAuth disabled: pods must handle authentication itself.",
+                fg="yellow",
+            )
+        else:
+            email = click.prompt("Enter your Google email for OAuth allow-list")
+
+            # write v3 config with traffic policy
+            config = f"""version: "3"
 agent:
     authtoken: {get_ngrok_token()}
 endpoints:
@@ -144,6 +163,8 @@ endpoints:
             click.secho(f"Tunnel started: {url}", fg="green")
             if has_oauth():
                 click.echo("OAuth enabled (Google login required)")
+            else:
+                click.echo("Tunnel OAuth disabled (app handles auth)")
         else:
             click.secho(
                 "Tunnel started but couldn't get URL. Check: curl http://localhost:4040",
@@ -166,5 +187,7 @@ endpoints:
             click.secho(f"Tunnel running: {url}", fg="green")
             if has_oauth():
                 click.echo("OAuth enabled (Google login required)")
+            else:
+                click.echo("Tunnel OAuth disabled (app handles auth)")
         else:
             click.secho("No tunnel running.", fg="red")

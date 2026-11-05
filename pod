@@ -215,6 +215,8 @@ def status():
         click.secho(f"\nTunnel:   {url}", fg="green")
         if tunnel.has_oauth():
             click.echo("OAuth:    enabled")
+        else:
+            click.echo("OAuth:    disabled (app handles auth)")
     else:
         click.secho("\nTunnel:   NOT running", fg="red")
 
