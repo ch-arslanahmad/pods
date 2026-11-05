@@ -174,7 +174,7 @@ async def openapi_spec(_request= None):
 
 
 def create_app():
-    app = mcp.sse_app()
+    app = mcp.streamable_http_app()
 
     app.add_route("/api/ping", ping, methods=["GET"])
     app.add_route("/api/pods", list_pods, methods=["GET"])
