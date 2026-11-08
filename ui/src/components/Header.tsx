@@ -7,9 +7,18 @@ type HeaderProps = {
   onQueryChange: (query: string) => void
   onCreate: () => void
   onHome: () => void
+  onAgents: () => void
+  agentsActive: boolean
 }
 
-export function Header({ query, onQueryChange, onCreate, onHome }: HeaderProps) {
+export function Header({
+  query,
+  onQueryChange,
+  onCreate,
+  onHome,
+  onAgents,
+  agentsActive,
+}: HeaderProps) {
   const searchRef = useRef<HTMLInputElement>(null)
 
   const health = useQuery({
@@ -91,6 +100,17 @@ export function Header({ query, onQueryChange, onCreate, onHome }: HeaderProps) 
       </div>
 
       <div className="topbar-actions">
+        <button
+          type="button"
+          className={`agents-link ${agentsActive ? 'is-active' : ''}`}
+          onClick={onAgents}
+          aria-label="AI Agents"
+        >
+          <span className="agents-link-icon" aria-hidden="true">
+            ✦
+          </span>
+          <span className="agents-link-label">AI Agents</span>
+        </button>
         <span className={`health health-${status}`}>
           <span className="health-dot" aria-hidden="true" />
           {status}

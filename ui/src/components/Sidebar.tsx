@@ -11,11 +11,21 @@ type SidebarProps = {
   filters: PodFilterState
   onChange: (patch: Partial<PodFilterState>) => void
   onClear: () => void
+  libraryActive: boolean
+  settingsActive: boolean
+  onSettings: () => void
 }
 
 const RANGES: DateRange[] = ['all', 'today', 'week', 'month']
 
-export function Sidebar({ filters, onChange, onClear }: SidebarProps) {
+export function Sidebar({
+  filters,
+  onChange,
+  onClear,
+  libraryActive,
+  settingsActive,
+  onSettings,
+}: SidebarProps) {
   const [open, setOpen] = useState(false)
 
   const categories = useQuery({
@@ -28,6 +38,7 @@ export function Sidebar({ filters, onChange, onClear }: SidebarProps) {
   })
 
   const isAll =
+    libraryActive &&
     filters.category === '' &&
     filters.project === '' &&
     filters.range === 'all'
@@ -83,7 +94,7 @@ export function Sidebar({ filters, onChange, onClear }: SidebarProps) {
               key={category}
               type="button"
               className={`side-item ${
-                filters.category === category ? 'is-active' : ''
+                libraryActive && filters.category === category ? 'is-active' : ''
               }`}
               onClick={() =>
                 onChange({
@@ -96,6 +107,21 @@ export function Sidebar({ filters, onChange, onClear }: SidebarProps) {
             </button>
           ))}
           {categories.isPending && <span className="side-hint">Loading…</span>}
+          {categories.isError && (
+            <span className="side-hint">
+              Couldn't load ·{' '}
+              <button
+                type="button"
+                className="side-retry"
+                onClick={() => void categories.refetch()}
+              >
+                retry
+              </button>
+            </span>
+          )}
+          {categories.isSuccess && categories.data.length === 0 && (
+            <span className="side-hint">No categories yet</span>
+          )}
         </div>
 
         <div className="sidebar-section">
@@ -105,7 +131,7 @@ export function Sidebar({ filters, onChange, onClear }: SidebarProps) {
               key={project}
               type="button"
               className={`side-item ${
-                filters.project === project ? 'is-active' : ''
+                libraryActive && filters.project === project ? 'is-active' : ''
               }`}
               onClick={() =>
                 onChange({
@@ -118,6 +144,21 @@ export function Sidebar({ filters, onChange, onClear }: SidebarProps) {
             </button>
           ))}
           {projects.isPending && <span className="side-hint">Loading…</span>}
+          {projects.isError && (
+            <span className="side-hint">
+              Couldn't load ·{' '}
+              <button
+                type="button"
+                className="side-retry"
+                onClick={() => void projects.refetch()}
+              >
+                retry
+              </button>
+            </span>
+          )}
+          {projects.isSuccess && projects.data.length === 0 && (
+            <span className="side-hint">No projects yet</span>
+          )}
         </div>
 
         <div className="sidebar-section">
@@ -127,7 +168,7 @@ export function Sidebar({ filters, onChange, onClear }: SidebarProps) {
               key={range}
               type="button"
               className={`side-item ${
-                filters.range === range ? 'is-active' : ''
+                libraryActive && filters.range === range ? 'is-active' : ''
               }`}
               onClick={() => onChange({ range })}
             >
@@ -146,6 +187,28 @@ export function Sidebar({ filters, onChange, onClear }: SidebarProps) {
             Clear filters
           </button>
         </div>
+      </div>
+
+      <div className="sidebar-account">
+        <div className="sidebar-user">
+          <span className="sidebar-avatar" aria-hidden="true">
+            OA
+          </span>
+          <span className="sidebar-user-text">
+            <span className="sidebar-user-name">Ouwn Ch</span>
+            <span className="sidebar-user-meta">Owner · local workspace</span>
+          </span>
+        </div>
+        <button
+          type="button"
+          className={`side-item ${settingsActive ? 'is-active' : ''}`}
+          onClick={onSettings}
+        >
+          <span className="side-icon" aria-hidden="true">
+            ⚙
+          </span>
+          <span className="side-text">Settings</span>
+        </button>
       </div>
     </aside>
   )
