@@ -47,7 +47,11 @@ export function EmptyState({ title, hint, action }: EmptyStateProps) {
       <h2>{title}</h2>
       <p>{hint}</p>
       {action && (
-        <button type="button" className="button" onClick={action.onClick}>
+        <button
+          type="button"
+          className="button button-primary"
+          onClick={action.onClick}
+        >
           {action.label}
         </button>
       )}
