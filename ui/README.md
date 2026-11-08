@@ -37,11 +37,11 @@ src/
 │   ├── seedClient.ts  PodsContract over the seed dataset, with artificial latency
 │   ├── http.ts        PodsContract over the real REST API (stub)
 │   └── client.ts      the one switch: seed vs http
-├── components/        Header, Pagination, loading/error/empty states
-├── features/pods/     PodList, PodFilters, PodDetail, PodForm
+├── components/        Background, Header, Sidebar, Pagination, loading/error/empty states
+├── features/pods/     PodList, PodDetail, PodForm
 ├── hooks/             useDebounce
 ├── lib/format.ts      timestamp, preview, and JSON helpers
-├── App.tsx            list ↔ detail ↔ create/edit routing (state, no router)
+├── App.tsx            filters + list ↔ detail ↔ create/edit routing (state, no router)
 └── main.tsx           React Query provider
 ```
 
