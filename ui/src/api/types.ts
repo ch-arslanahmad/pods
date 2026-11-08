@@ -38,6 +38,29 @@ export type PodPage = {
   total: number
 }
 
+export type AgentStatus = 'active' | 'paused'
+
+export type Agent = {
+  id: number
+  name: string
+  description: string
+  provider: string
+  model: string
+  status: AgentStatus
+  created_at: string
+  pod_ids: number[]
+}
+
+export type CreateAgentInput = {
+  name: string
+  description: string
+  provider: string
+  model: string
+  status: AgentStatus
+}
+
+export type UpdateAgentPatch = Partial<CreateAgentInput>
+
 export type PodsContract = {
   ping(): Promise<{ status: string }>
   listPods(params: ListPodsParams): Promise<PodPage>
@@ -47,4 +70,11 @@ export type PodsContract = {
   deletePod(id: number): Promise<void>
   listCategories(): Promise<string[]>
   listProjects(): Promise<string[]>
+  listAgents(): Promise<Agent[]>
+  createAgent(input: CreateAgentInput): Promise<Agent>
+  updateAgent(id: number, patch: UpdateAgentPatch): Promise<Agent>
+  deleteAgent(id: number): Promise<void>
+  listPodAgentIds(podId: number): Promise<number[]>
+  setPodAgents(podId: number, agentIds: number[]): Promise<void>
+  setAgentPods(agentId: number, podIds: number[]): Promise<void>
 }

@@ -3,6 +3,8 @@ import type { PodsContract } from './types'
 // The real transport. Intentionally a stub: this issue ships the seed-backed UI
 // only. The follow-up integration PR fills these in against api.py.
 //
+// Agents are UI-only mocks for now — the backend has no agent endpoints yet.
+//
 // Three known mismatches to handle then:
 //   1. Responses are wrapped in { success: true, data: ... }.
 //   2. GET /api/pods returns an array with no `total` (needs a COUNT query).
@@ -22,4 +24,11 @@ export const httpClient: PodsContract = {
   deletePod: () => notImplemented('deletePod'),
   listCategories: () => notImplemented('listCategories'),
   listProjects: () => notImplemented('listProjects'),
+  listAgents: () => notImplemented('listAgents'),
+  createAgent: () => notImplemented('createAgent'),
+  updateAgent: () => notImplemented('updateAgent'),
+  deleteAgent: () => notImplemented('deleteAgent'),
+  listPodAgentIds: () => notImplemented('listPodAgentIds'),
+  setPodAgents: () => notImplemented('setPodAgents'),
+  setAgentPods: () => notImplemented('setAgentPods'),
 }

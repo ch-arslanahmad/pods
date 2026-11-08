@@ -1,4 +1,4 @@
-import type { Pod } from './types'
+import type { Agent, Pod } from './types'
 
 // Seed data mirrors db/schema.sql. Timestamps are relative to load time so the
 // Today / This week / This month filters always have something to show.
@@ -409,3 +409,53 @@ export const seedPods: Pod[] = specs.map((spec, index) => ({
   deleted_at:
     spec.deleted_days_ago === undefined ? null : iso(spec.deleted_days_ago),
 }))
+
+// Agents are a UI-only concept for now. The seed links them to a mix of active
+// pods, and pod 1 intentionally belongs to several agents so the many-to-many
+// connection UI is visible from the start.
+export const seedAgents: Agent[] = [
+  {
+    id: 1,
+    name: 'Claude Code',
+    description:
+      'Long-context coding agent for architecture notes and multi-file changes.',
+    provider: 'Anthropic',
+    model: 'claude-sonnet-4.5',
+    status: 'active',
+    created_at: iso(64),
+    pod_ids: [1, 2, 3, 8, 11, 17, 19],
+  },
+  {
+    id: 2,
+    name: 'Codex',
+    description:
+      'Fast implementation agent used for reviews, refactors, and test runs.',
+    provider: 'OpenAI',
+    model: 'gpt-5-codex',
+    status: 'active',
+    created_at: iso(48),
+    pod_ids: [1, 5, 6, 9, 12, 20, 24],
+  },
+  {
+    id: 3,
+    name: 'Gemini CLI',
+    description:
+      'Research assistant for comparing approaches and summarising references.',
+    provider: 'Google',
+    model: 'gemini-2.5-pro',
+    status: 'paused',
+    created_at: iso(33),
+    pod_ids: [2, 7, 14, 18, 25],
+  },
+  {
+    id: 4,
+    name: 'Local Ollama',
+    description:
+      'Private local model for drafts that should never leave the machine.',
+    provider: 'Ollama',
+    model: 'qwen3-coder',
+    status: 'active',
+    created_at: iso(21),
+    pod_ids: [1, 4, 10, 13, 21, 26],
+  },
+]
