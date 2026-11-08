@@ -24,6 +24,8 @@ async function refreshAfterChange(queryClient: QueryClient, podId: number) {
     queryClient.invalidateQueries({ queryKey: ['pod', podId] }),
     queryClient.invalidateQueries({ queryKey: ['categories'] }),
     queryClient.invalidateQueries({ queryKey: ['projects'] }),
+    queryClient.invalidateQueries({ queryKey: ['pod-agents', podId] }),
+    queryClient.invalidateQueries({ queryKey: ['agents'] }),
   ])
 }
 
@@ -101,9 +103,25 @@ function PodFormFields({
     queryKey: ['projects'],
     queryFn: () => api.listProjects(),
   })
+  const agentsQuery = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => api.listAgents(),
+  })
+  const podAgentIdsQuery = useQuery({
+    queryKey: ['pod-agents', editingId ?? 0],
+    queryFn: () => api.listPodAgentIds(editingId ?? 0),
+    enabled: editingId !== null,
+  })
+
+  const [agentIds, setAgentIds] = useState<number[] | null>(null)
+  const selectedAgentIds = agentIds ?? podAgentIdsQuery.data ?? []
 
   const createMutation = useMutation({
-    mutationFn: (input: CreatePodInput) => api.createPod(input),
+    mutationFn: async (input: CreatePodInput) => {
+      const pod = await api.createPod(input)
+      await api.setPodAgents(pod.id, selectedAgentIds)
+      return pod
+    },
     onSuccess: async (pod) => {
       await refreshAfterChange(queryClient, pod.id)
       onDone(pod.id)
@@ -111,8 +129,11 @@ function PodFormFields({
   })
 
   const updateMutation = useMutation({
-    mutationFn: (input: { id: number; patch: UpdatePodPatch }) =>
-      api.updatePod(input.id, input.patch),
+    mutationFn: async (input: { id: number; patch: UpdatePodPatch }) => {
+      const pod = await api.updatePod(input.id, input.patch)
+      await api.setPodAgents(pod.id, selectedAgentIds)
+      return pod
+    },
     onSuccess: async (pod) => {
       await refreshAfterChange(queryClient, pod.id)
       onDone(pod.id)
@@ -214,6 +235,71 @@ function PodFormFields({
               ))}
             </datalist>
           </label>
+        </div>
+
+        <div className="field">
+          <span className="field-label">AI agents</span>
+          <span className="field-hint">
+            Connect this pod to one or more agents. You can change this later.
+          </span>
+
+          {agentsQuery.isPending && (
+            <span className="field-hint">Loading agents…</span>
+          )}
+
+          {agentsQuery.isError && (
+            <span className="field-error">
+              Couldn't load agents.{' '}
+              <button
+                type="button"
+                className="side-retry"
+                onClick={() => void agentsQuery.refetch()}
+              >
+                retry
+              </button>
+            </span>
+          )}
+
+          {agentsQuery.isSuccess && agentsQuery.data.length === 0 && (
+            <span className="field-hint">
+              No agents yet — add one from AI Agents.
+            </span>
+          )}
+
+          {agentsQuery.isSuccess && agentsQuery.data.length > 0 && (
+            <div className="agent-options">
+              {agentsQuery.data.map((agent) => {
+                const checked = selectedAgentIds.includes(agent.id)
+                return (
+                  <label
+                    key={agent.id}
+                    className={`agent-option ${checked ? 'is-on' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={
+                        editingId !== null && podAgentIdsQuery.isPending
+                      }
+                      onChange={() =>
+                        setAgentIds(
+                          checked
+                            ? selectedAgentIds.filter((id) => id !== agent.id)
+                            : [...selectedAgentIds, agent.id],
+                        )
+                      }
+                    />
+                    <span className="agent-option-text">
+                      <span className="agent-option-name">{agent.name}</span>
+                      <span className="agent-option-meta">
+                        {agent.provider} · {agent.model}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {mutationError && <p className="form-error">{mutationError.message}</p>}

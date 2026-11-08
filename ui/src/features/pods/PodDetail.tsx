@@ -19,6 +19,37 @@ export function PodDetail({ id, onBack, onEdit }: PodDetailProps) {
     queryFn: () => api.getPod(id),
   })
 
+  const agentsQuery = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => api.listAgents(),
+  })
+
+  const podAgentsQuery = useQuery({
+    queryKey: ['pod-agents', id],
+    queryFn: () => api.listPodAgentIds(id),
+  })
+
+  const setAgentsMutation = useMutation({
+    mutationFn: (agentIds: number[]) => api.setPodAgents(id, agentIds),
+    onMutate: async (agentIds) => {
+      await queryClient.cancelQueries({ queryKey: ['pod-agents', id] })
+      const previous = queryClient.getQueryData<number[]>(['pod-agents', id])
+      queryClient.setQueryData(['pod-agents', id], agentIds)
+      return { previous }
+    },
+    onError: (_error, _agentIds, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['pod-agents', id], context.previous)
+      }
+    },
+    onSettled: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['pod-agents', id] }),
+        queryClient.invalidateQueries({ queryKey: ['agents'] }),
+      ])
+    },
+  })
+
   const deleteMutation = useMutation({
     mutationFn: () => api.deletePod(id),
     onSuccess: async () => {
@@ -26,8 +57,10 @@ export function PodDetail({ id, onBack, onEdit }: PodDetailProps) {
         queryClient.invalidateQueries({ queryKey: ['pods'] }),
         queryClient.invalidateQueries({ queryKey: ['categories'] }),
         queryClient.invalidateQueries({ queryKey: ['projects'] }),
+        queryClient.invalidateQueries({ queryKey: ['agents'] }),
       ])
       queryClient.removeQueries({ queryKey: ['pod', id] })
+      queryClient.removeQueries({ queryKey: ['pod-agents', id] })
       onBack()
     },
   })
@@ -113,6 +146,83 @@ export function PodDetail({ id, onBack, onEdit }: PodDetailProps) {
             <pre>{content.text}</pre>
           ) : (
             <p className="detail-text">{content.text}</p>
+          )}
+        </div>
+
+        <div className="detail-agents">
+          <div className="detail-agents-head">
+            <div>
+              <h2>AI agents</h2>
+              <p>Connect this pod to one or more agents. Changes save instantly.</p>
+            </div>
+            {setAgentsMutation.isPending && (
+              <span className="settings-pill">Saving…</span>
+            )}
+          </div>
+
+          {agentsQuery.isPending && (
+            <p className="side-hint">Loading agents…</p>
+          )}
+
+          {agentsQuery.isError && (
+            <p className="field-error">
+              Couldn't load agents.{' '}
+              <button
+                type="button"
+                className="side-retry"
+                onClick={() => void agentsQuery.refetch()}
+              >
+                retry
+              </button>
+            </p>
+          )}
+
+          {agentsQuery.isSuccess && agentsQuery.data.length === 0 && (
+            <p className="side-hint">
+              No agents yet. Add one from AI Agents in the top bar.
+            </p>
+          )}
+
+          {agentsQuery.isSuccess && agentsQuery.data.length > 0 && (
+            <div className="agent-options">
+              {agentsQuery.data.map((agent) => {
+                const connected = (podAgentsQuery.data ?? []).includes(agent.id)
+                return (
+                  <label
+                    key={agent.id}
+                    className={`agent-option ${connected ? 'is-on' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={connected}
+                      disabled={
+                        setAgentsMutation.isPending || podAgentsQuery.isPending
+                      }
+                      onChange={() => {
+                        const current = podAgentsQuery.data ?? []
+                        const next = connected
+                          ? current.filter((agentId) => agentId !== agent.id)
+                          : [...current, agent.id]
+                        setAgentsMutation.mutate(next)
+                      }}
+                    />
+                    <span className="agent-option-text">
+                      <span className="agent-option-name">{agent.name}</span>
+                      <span className="agent-option-meta">
+                        {agent.provider} · {agent.model}
+                      </span>
+                    </span>
+                    <span className="agent-option-state">
+                      {connected ? 'Connected' : 'Connect'}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+
+          {setAgentsMutation.isError && (
+            <p className="field-error">{setAgentsMutation.error.message}</p>
           )}
         </div>
       </article>
