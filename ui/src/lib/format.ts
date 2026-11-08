@@ -26,11 +26,6 @@ export function formatDateTime(value: string): string {
   })
 }
 
-export function preview(content: string, max = 140): string {
-  const flat = content.replace(/\s+/g, ' ').trim()
-  return flat.length > max ? `${flat.slice(0, max)}…` : flat
-}
-
 export function prettyContent(content: string): { isJson: boolean; text: string } {
   try {
     const parsed: unknown = JSON.parse(content)

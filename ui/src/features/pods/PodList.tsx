@@ -4,7 +4,7 @@ import type { Pod } from '../../api/types'
 import { Pagination } from '../../components/Pagination'
 import { EmptyState, ErrorState, LoadingCards } from '../../components/States'
 import { useDebounce } from '../../hooks/useDebounce'
-import { formatDate, preview, toDateInput } from '../../lib/format'
+import { formatDate, toDateInput } from '../../lib/format'
 import { type DateRange, type PodFilterState } from './filters'
 
 const PAGE_SIZE = 9
@@ -145,9 +145,11 @@ function PodCard({
         )}
       </span>
       <span className="pod-name">{pod.pod_name}</span>
-      <span className="pod-preview">{preview(pod.content)}</span>
       <span className="pod-card-foot">
-        <span>{formatDate(pod.created_at)}</span>
+        <span className="pod-dates">
+          <span>Created {formatDate(pod.created_at)}</span>
+          <span>Updated {formatDate(pod.updated_at)}</span>
+        </span>
         <span className="pod-open">Open →</span>
       </span>
     </button>
