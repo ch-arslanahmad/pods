@@ -1,6 +1,7 @@
 import base64
 import json
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 
 from pydantic import field_validator
 from starlette.applications import Starlette
@@ -129,20 +130,24 @@ async def resource_metadata(request) -> JSONResponse:
     return JSONResponse(data)
 
 
+# Get OAuth token (access/refresh) endpoint (POST only, per RFC 6749)
 async def oauth_token(request) -> JSONResponse:
 
     form = await request.form()
     grant_type = form.get("grant_type")  # get grant type
-    client_id = form.get("client_id")  # get client ID
-    # get client secret, required as per Confidential clients like Claude Web, ChatGPT Web etc
-    client_secret = form.get("client_secret")
 
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Basic "):
         try:
             # Decode Basic Auth header
-            encoded_credentials = auth_header.split(" ")[1]
-            decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+            encoded_credentials = auth_header.split(" ")[
+                1
+            ]  # get the base64-encoded part
+            decoded_credentials = base64.b64decode(encoded_credentials).decode(
+                "utf-8"
+            )  # decode from base64 to utf-8
+
+            # get client secret, required as per Confidential clients like Claude Web, ChatGPT Web etc
             client_id, client_secret = decoded_credentials.split(":", 1)
         except Exception as e:
             return error_response(
@@ -186,6 +191,12 @@ async def oauth_token(request) -> JSONResponse:
         elif auth_code.client_id != client_id:
             return error_response(
                 "invalid_grant", "Authorization code was not issued to this client", 400
+            )
+        elif form.get("redirect_uri") != auth_code.redirect_uri:
+            return error_response(
+                "invalid_grant",
+                "redirect_uri does not match authorization request",
+                400,
             )
 
         # Verify PKCE math
@@ -234,6 +245,51 @@ async def oauth_token(request) -> JSONResponse:
             }
         )
 
+    # ? for refresh token flow (after initial login)
+    elif grant_type == "refresh_token":
+        refresh_token = form.get("refresh_token")
+        if not refresh_token:
+            return error_response("invalid_request", "Missing refresh_token", 400)
+
+        import core
+
+        token_hash = core.hash_token(refresh_token)
+        token: storage.Token = storage.get_token(token_hash)
+
+        if not token or token.token_type != "refresh":
+            return error_response(
+                "invalid_grant", "Invalid or expired refresh token", 400
+            )
+
+        if token.client_id != client_id:
+            return error_response(
+                "invalid_grant", "Refresh token was not issued to this client", 400
+            )
+
+        # Slide expiry window: reset to 30 days from now
+        new_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+        storage.update_refresh_token_expiry(token_hash, new_expires_at)
+
+        # Mint a new access token
+        access_token = core.generate_token()
+        storage.save_token(
+            storage.Token(
+                token_hash=core.hash_token(access_token),
+                client_id=token.client_id,
+                token_type="access",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                scope=token.scope,
+            )
+        )
+
+        return JSONResponse(
+            {
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "scope": token.scope,
+            }
+        )
     else:
         return error_response(
             "unsupported_grant_type", "Only authorization_code is supported", 400

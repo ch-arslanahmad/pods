@@ -156,8 +156,8 @@ def get_token(token_hash: str) -> Token | None:
     return token
 
 
-def extend_refresh_token(token_hash: str, new_expires_at: datetime) -> bool:
-    """Update 30-day sliding expiry for a valid refresh token."""
+def update_refresh_token_expiry(token_hash: str, new_expires_at: datetime) -> bool:
+    """Reset the expiration timestamp and update last_used_at for a valid refresh token."""
     token = _tokens.get(token_hash)
     if not token or not token.is_valid:
         return False
