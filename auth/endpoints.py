@@ -93,6 +93,14 @@ async def test_post(request) -> JSONResponse:
 # ... the actual OAuth setup
 
 
+def error_response(error: str, message: str, status_code: int = 400) -> JSONResponse:
+    """Reusable helper for standard OAuth error responses."""
+    return JSONResponse(
+        {"error": error, "message": message},
+        status_code=status_code,
+    )
+
+
 async def oauth_metadata(request) -> JSONResponse:
     base_url = str(request.base_url).rstrip("/")  # remove trailing slash
 
@@ -137,30 +145,42 @@ async def oauth_token(request) -> JSONResponse:
             decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
             client_id, client_secret = decoded_credentials.split(":", 1)
         except Exception as e:
-            return JSONResponse(
-                {"error": "invalid_request", "message": "Invalid Authorization header"},
-                status_code=400,
-            )
+            return error_response("invalid_request", "Invalid Authorization header", 400)
     import storage
 
+    # verify client_id and client_secret are provided
     if not client_id:
-        return JSONResponse(
-            {"error": "invalid_client", "message": "Missing client_id"},
-            status_code=400,
-        )
+        return error_response("invalid_client", "Missing client_id", 400)
     if not client_secret:
-        return JSONResponse(
-            {"error": "invalid_client", "message": "Missing client_secret"},
-            status_code=400,
-        )
+        return error_response("invalid_client", "Missing client_secret", 400)
 
+    # verify client credentials against storage
     client = storage.get_client(client_id)
     if not client or client.client_secret != client_secret:
-        return JSONResponse(
-            {"error": "invalid_client", "message": "Invalid client credentials"},
-            status_code=401,
-        )
-    return JSONResponse({"message": "Token endpoint is not fully implemented yet"}, status_code=501);
+        return error_response("invalid_client", "Invalid client credentials", 401)
+
+    # If we get here, the client is valid
+    if grant_type == "authorization_code":
+        code = form.get("code")
+        code_verifier = form.get("code_verifier")
+
+        # verify that provided
+        if not code or not code_verifier:
+            return error_response("invalid_request", "Missing code or code_verifier", 400)
+
+        import core
+
+        code_hash = core.hash_token(code)  # hash the code
+        auth_code = storage.consume_code(
+            code_hash
+        )  # single-use code for authentication
+
+        if not auth_code:
+            return error_response("invalid_grant", "Invalid or expired code", 400)
+
+    return JSONResponse(
+        {"message": "Token endpoint is not fully implemented yet"}, status_code=501
+    )
 
 
 """
@@ -232,5 +252,5 @@ if __name__ == "__main__":
     import uvicorn
     from starlette.applications import Starlette
 
-    print("Serving OAuth endpoints on http://127.0.0.1:5173 ...")
-    uvicorn.run(app, host="127.0.0.1", port=5173)
+    print("Serving OAuth endpoints on http://127.0.0.1:5111 ...")
+    uvicorn.run(app, host="127.0.0.1", port=5111)
