@@ -35,7 +35,6 @@ class PostData:
     id: int
     name: str
     age: int
-
     # Pydantic v2: extra="forbid" rejects unknown fields
     model_config = {"extra": "forbid"}
 
@@ -125,12 +124,50 @@ routes = [
     Route("/mcp", mcp),
     Route("/", hello),
     Route("/user", get_user),
+    Route("/post", test_post, methods=["POST"]),
+    # ... actual OAuth endpoints
     Route("/.well-known/oauth-authorization-server", oauth_metadata),
     Route("/.well-known/oauth-protected-resource", resource_metadata),
     Route("/.well-known/openid-configuration", oauth_metadata),  # Gemini fallback
 ]
 
-app: Starlette = Starlette(routes=routes)
+
+## Exception handlers
+
+
+async def not_found(request, exc) -> JSONResponse:
+    return JSONResponse(
+        {"error": "not_found", "message": "Resource not found", "status": 404},
+        status_code=404,
+    )
+
+
+async def not_allowed(request, exc) -> JSONResponse:
+    return JSONResponse(
+        {
+            "error": "method_not_allowed",
+            "message": f"Method {request.method} not allowed on {request.url.path}",
+            "status": 405,
+        },
+        status_code=405,
+    )
+
+
+async def server_error(request, exc) -> JSONResponse:
+    return JSONResponse(
+        {"error": "internal_server_error", "message": str(exc), "status": 500},
+        status_code=500,
+    )
+
+
+app: Starlette = Starlette(
+    routes=routes,
+    exception_handlers={
+        404: not_found,
+        405: not_allowed,
+        500: server_error,
+    },
+)
 
 if __name__ == "__main__":
     import uvicorn
