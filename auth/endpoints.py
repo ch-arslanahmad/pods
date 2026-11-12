@@ -145,7 +145,9 @@ async def oauth_token(request) -> JSONResponse:
             decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
             client_id, client_secret = decoded_credentials.split(":", 1)
         except Exception as e:
-            return error_response("invalid_request", "Invalid Authorization header", 400)
+            return error_response(
+                "invalid_request", "Invalid Authorization header", 400
+            )
     import storage
 
     # verify client_id and client_secret are provided
@@ -160,13 +162,17 @@ async def oauth_token(request) -> JSONResponse:
         return error_response("invalid_client", "Invalid client credentials", 401)
 
     # If we get here, the client is valid
+
+    # ? for fresh logins
     if grant_type == "authorization_code":
         code = form.get("code")
         code_verifier = form.get("code_verifier")
 
         # verify that provided
         if not code or not code_verifier:
-            return error_response("invalid_request", "Missing code or code_verifier", 400)
+            return error_response(
+                "invalid_request", "Missing code or code_verifier", 400
+            )
 
         import core
 
@@ -177,10 +183,61 @@ async def oauth_token(request) -> JSONResponse:
 
         if not auth_code:
             return error_response("invalid_grant", "Invalid or expired code", 400)
+        elif auth_code.client_id != client_id:
+            return error_response(
+                "invalid_grant", "Authorization code was not issued to this client", 400
+            )
 
-    return JSONResponse(
-        {"message": "Token endpoint is not fully implemented yet"}, status_code=501
-    )
+        # Verify PKCE math
+        if not core.verify_pkce(code_verifier, auth_code.code_challenge):  # verify PKCE
+            return error_response("invalid_grant", "PKCE verification failed", 400)
+
+        # TOKEN MINTING (access + refresh)
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+
+        ## 1. 1 hour access token
+        access_token = core.generate_token()
+
+        # mint the access token
+        storage.save_token(
+            storage.Token(
+                token_hash=core.hash_token(access_token),
+                client_id=client_id,
+                token_type="access",
+                expires_at=now + timedelta(hours=1),
+                scope=auth_code.scope,
+            )
+        )
+
+        ## 2. 30 day refresh token
+
+        refresh_token = core.generate_token()
+        storage.save_token(
+            storage.Token(
+                token_hash=core.hash_token(refresh_token),
+                client_id=client_id,
+                token_type="refresh",
+                expires_at=now + timedelta(days=30),
+                scope=auth_code.scope,
+            )
+        )
+
+        return JSONResponse(
+            {
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": refresh_token,
+                "scope": auth_code.scope,
+            }
+        )
+
+    else:
+        return error_response(
+            "unsupported_grant_type", "Only authorization_code is supported", 400
+        )
 
 
 """
