@@ -1,3 +1,4 @@
+import base64
 import json
 from dataclasses import asdict, dataclass
 
@@ -120,6 +121,63 @@ async def resource_metadata(request) -> JSONResponse:
     return JSONResponse(data)
 
 
+async def oauth_token(request) -> JSONResponse:
+
+    form = await request.form()
+    grant_type = form.get("grant_type")  # get grant type
+    client_id = form.get("client_id")  # get client ID
+    # get client secret, required as per Confidential clients like Claude Web, ChatGPT Web etc
+    client_secret = form.get("client_secret")
+
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Basic "):
+        try:
+            # Decode Basic Auth header
+            encoded_credentials = auth_header.split(" ")[1]
+            decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+            client_id, client_secret = decoded_credentials.split(":", 1)
+        except Exception as e:
+            return JSONResponse(
+                {"error": "invalid_request", "message": "Invalid Authorization header"},
+                status_code=400,
+            )
+    import storage
+
+    if not client_id:
+        return JSONResponse(
+            {"error": "invalid_client", "message": "Missing client_id"},
+            status_code=400,
+        )
+    if not client_secret:
+        return JSONResponse(
+            {"error": "invalid_client", "message": "Missing client_secret"},
+            status_code=400,
+        )
+
+    client = storage.get_client(client_id)
+    if not client or client.client_secret != client_secret:
+        return JSONResponse(
+            {"error": "invalid_client", "message": "Invalid client credentials"},
+            status_code=401,
+        )
+    return JSONResponse({"message": "Token endpoint is not fully implemented yet"}, status_code=501);
+
+
+"""
+This would return
+
+  
+    {
+      "access_token": "token_abc123...",
+      "token_type": "Bearer",
+      "expires_in": 3600,
+      "refresh_token": "refresh_xyz789...",
+      "scope": "pods:read pods:write"
+    }
+  ──────
+"""
+
+
 routes = [
     Route("/mcp", mcp),
     Route("/", hello),
@@ -129,6 +187,7 @@ routes = [
     Route("/.well-known/oauth-authorization-server", oauth_metadata),
     Route("/.well-known/oauth-protected-resource", resource_metadata),
     Route("/.well-known/openid-configuration", oauth_metadata),  # Gemini fallback
+    Route("/oauth/token", oauth_token, methods=["POST"]),
 ]
 
 
