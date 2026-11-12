@@ -1,5 +1,7 @@
+import json
 from dataclasses import asdict, dataclass
 
+from pydantic import field_validator
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
@@ -12,7 +14,7 @@ class User:
     age: int
 
 
-# this is testing
+# ! === this is testing ===
 async def get_user(request) -> JSONResponse:
     return JSONResponse(asdict(User(id=1, name="Alice", age=30)))
 
@@ -25,7 +27,70 @@ async def hello(request):
     return PlainTextResponse("hello World")
 
 
-# the actual OAuth setup
+## a testing pydantic class for POST requests (error if not valid JSON)
+
+
+class PostData:
+
+    id: int
+    name: str
+    age: int
+
+    # Pydantic v2: extra="forbid" rejects unknown fields
+    model_config = {"extra": "forbid"}
+
+    @field_validator("id", mode="before")
+    def validate_id(cls, v):
+        if not isinstance(v, int):
+            raise ValueError("id must be an integer")
+        elif v < 0:
+            raise ValueError("id must be non-negative")
+        return v
+
+    @field_validator("age", mode="before")
+    def validate_age(cls, v):
+        if not isinstance(v, int):
+            raise ValueError("age must be an integer")
+        elif v < 0:
+            raise ValueError("age must be non-negative")
+        elif v >= 18:
+            raise ValueError("age must be less than 18")
+        elif v < 150:
+            raise ValueError("age must be less than 150")
+        return v
+
+    @field_validator("name", mode="before")
+    def validate_name(cls, v):
+        if not isinstance(v, str):
+            raise ValueError("name must be a string")
+        elif len(v) == 0:
+            raise ValueError("name must be non-empty")
+        return v
+
+    def __init__(self, data: dict):
+        self.data = data
+
+
+async def test_post(request) -> JSONResponse:
+    try:
+        post_data = PostData(await request.json())
+        return JSONResponse(
+            {
+                "message": "This is a POST request with data: ",
+                "data": str(post_data.data),
+            }
+        )
+    except json.JSONDecodeError as e:
+        return JSONResponse(
+            {"error": "invalid_json", "message": str(e)}, status_code=400
+        )
+    except Exception as e:
+        return JSONResponse(
+            {"error": "bad_request", "message": str(e)}, status_code=400
+        )
+
+
+# ... the actual OAuth setup
 
 
 async def oauth_metadata(request) -> JSONResponse:
