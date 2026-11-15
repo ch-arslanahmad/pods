@@ -1,7 +1,7 @@
-# ADR 0003: Public Ingress via Tailscale Funnel
+# ADR 0003: Public Ingress via Tailscale Funnel and Ngrok Static Domain
 
-**Status:** Accepted  
-**Date:** 2026-11-10
+**Status:** Accepted & Implemented  
+**Date:** 2026-11-10 (Updated 2026-11-15)
 
 ## Context
 
@@ -19,33 +19,32 @@ Claude's custom connectors run from Anthropic's cloud infrastructure, not in the
    - URLs are ephemeral and change on every process restart or reconnect.
    - Breaks OAuth callback URLs (`redirect_uri`), token audience claims (`aud`), and Protected Resource Metadata (`resource`), forcing full manual re-authentication on every restart.
    - Official Cloudflare documentation states Quick Tunnels do not support Server-Sent Events (SSE).
+   - Free quick tunnel coordination endpoint (`api.trycloudflare.com/tunnel`) experiences severe throttling and timeouts (`context deadline exceeded`) on consumer networks, making it unreliable. Removed from `pods`.
 
 3. **Ngrok (Free Tier):**
-   - Enforces an HTML interstitial phishing warning page (`ERR_NGROK_6024`).
-   - Automated cloud MCP fetchers (Claude, ChatGPT) fail because they parse JSON/SSE responses and do not inject the vendor-specific bypass header (`ngrok-skip-browser-warning: true`).
+   - Free tier includes one permanent static domain (`<subdomain>.ngrok-free.dev`), eliminating URL churn across restarts.
+   - While browser `GET` requests (`Accept: text/html`) display a one-time interstitial warning page (`ERR_NGROK_6024`), **automated cloud MCP fetchers (Claude, ChatGPT, Gemini) send API requests (`application/json`) which ngrok forwards directly without the interstitial**.
+   - End-to-end OAuth + MCP flow works over free-tier ngrok: human clicks through the warning once during authorization; subsequent automated token and tool calls pass through unobstructed.
 
 4. **Tailscale Funnel:**
-   - Exposes node traffic publicly to the internet at a stable URL: `https://<node>.<tailnet>.ts.net`.
+   - Exposes node traffic publicly to the internet at a permanent URL: `https://<node>.<tailnet>.ts.net`.
    - Requires no custom domain ownership or DNS hosting fees.
    - Issues valid Let's Encrypt TLS certificates automatically via MagicDNS.
    - Supports raw HTTP and Streamable HTTP streaming without HTML interstitial pages.
+   - Requires one-time Funnel toggle in the Tailscale Admin Console and local operator permissions (`sudo tailscale set --operator=$USER`).
 
 ## Decision
 
-Adopt **Tailscale Funnel** for public HTTPS ingress:
+Support both **Tailscale Funnel** and **Ngrok (static domain)** as transparent HTTPS ingress providers managed via `pod tunnel`:
 
-1. **Expose local port 8000:**
+1. **Tailscale Funnel:** Permanent MagicDNS domain (`https://<node>.<tailnet>.ts.net/mcp`), zero vendor rate limits, zero interstitial.
+   - Start: `pod tunnel tailscale start` (or `tailscale funnel --bg 8000`).
+   - Requires: `sudo tailscale set --operator=$USER` once to configure ports without root.
 
-```bash
-tailscale funnel --bg 8000
-```
+2. **Ngrok:** Permanent reserved domain (`https://<domain>.ngrok-free.dev/mcp`), immediate setup without admin console toggles.
+   - Start: `pod tunnel ngrok start` (or `ngrok http --url=<domain> 8000`).
 
-Routing traffic from `https://<node>.<tailnet>.ts.net` publicly to `127.0.0.1:8000`.
-
-2. **Endpoint path:**: The MCP server mounts Streamable HTTP at `/mcp`, yielding connector URL:
-`https://<node>.<tailnet>.ts.net/mcp`.
-
-3. **Persistence:**: Manage `pods` and background network recovery via `systemd` user units with `loginctl enable-linger $USER` enabled, ensuring persistence across desktop lock/logout.
+Both tunnels act purely as transparent HTTPS pipes; all OAuth 2.1 authentication and MCP protection are handled internally by `pods`.
 
 ## Security Considerations
 
