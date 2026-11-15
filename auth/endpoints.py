@@ -2,9 +2,10 @@ import base64
 import binascii
 import secrets
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from starlette.applications import Starlette
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.routing import Route
 
 from auth import core, storage
@@ -115,10 +116,10 @@ async def oauth_token(request) -> JSONResponse:
             return error_response(
                 "invalid_grant", "Authorization code was not issued to this client", 400
             )
-        elif form.get("redirect_uri") != auth_code.redirect_uri:
+        elif form.get("redirect_uris") != auth_code.redirect_uris:
             return error_response(
                 "invalid_grant",
-                "redirect_uri does not match authorization request",
+                "redirect_uris does not match authorization request",
                 400,
             )
 
@@ -138,7 +139,9 @@ async def oauth_token(request) -> JSONResponse:
                 token_hash=core.hash_token(access_token),
                 client_id=client_id,
                 token_type="access",
-                expires_at=(now + timedelta(hours=1)).isoformat(), # get in datetime format
+                expires_at=(
+                    now + timedelta(hours=1)
+                ).isoformat(),  # get in datetime format
                 scope=auth_code.scope,
             )
         )
@@ -151,7 +154,9 @@ async def oauth_token(request) -> JSONResponse:
                 token_hash=core.hash_token(refresh_token),
                 client_id=client_id,
                 token_type="refresh",
-                expires_at=(now + timedelta(days=30)).isoformat(), # get in datetime format
+                expires_at=(
+                    now + timedelta(days=30)
+                ).isoformat(),  # get in datetime format
                 scope=auth_code.scope,
             )
         )
@@ -218,7 +223,7 @@ async def oauth_token(request) -> JSONResponse:
 """
 This would return
 
-  
+
     {
       "access_token": "token_abc123...",
       "token_type": "Bearer",
@@ -230,16 +235,145 @@ This would return
 """
 
 
+TEMPLATE_PATH = Path(__file__).parent / "templates" / "authorize.html"
+
+
+def render_authorize_html(
+    client_id: str,
+    redirect_uri: str,
+    scope: str,
+    state: str,
+    code_challenge: str,
+    code_challenge_method: str = "S256",
+    error_message: str | None = None,
+) -> HTMLResponse:
+    error_banner = (
+        f'<div class="alert-error">{error_message}</div>' if error_message else ""
+    )
+    cancel_url = f"{redirect_uri}?error=access_denied&state={state}"
+
+    html = (
+        TEMPLATE_PATH.read_text(encoding="utf-8")
+        .replace("{{ client_id }}", client_id)
+        .replace("{{ scope }}", scope)
+        .replace("{{ redirect_uri }}", redirect_uri)
+        .replace("{{ code_challenge }}", code_challenge)
+        .replace("{{ code_challenge_method }}", code_challenge_method)
+        .replace("{{ state }}", state)
+        .replace("{{ error_banner }}", error_banner)
+        .replace("{{ cancel_url }}", cancel_url)
+    )
+    return HTMLResponse(html)
+
+
+async def oauth_authorize(request) -> HTMLResponse | RedirectResponse:
+    """OAuth 2.0 Authorization Endpoint (RFC 6749). Handles GET for user consent and POST for form submission."""
+
+    # Handle GET request: Show user consent page
+    if request.method == "GET":
+        # extract query parameters from the request
+        params = request.query_params
+        client_id = params.get("client_id")
+        redirect_uri = params.get("redirect_uri")
+        response_type = params.get("response_type")
+        code_challenge = params.get("code_challenge")
+        code_challenge_method = params.get("code_challenge_method", "S256")
+        scope = params.get("scope", "")
+        state = params.get("state", "")
+
+        # Validate required parameters
+        if not client_id:
+            return error_response("invalid_request", "Missing client_id", 400)
+
+        client = storage.get_client(client_id)
+        if not client:
+            return error_response("invalid_client", "Unknown client_id", 400)
+        if not redirect_uri or redirect_uri not in client.redirect_uris:
+            return error_response(
+                "invalid_request", "redirect_uri does not match registered URI", 400
+            )
+        if response_type != "code":
+            return error_response(
+                "unsupported_response_type",
+                "Only 'code' response_type is supported",
+                400,
+            )
+        if code_challenge_method != "S256":
+            return error_response(
+                "invalid_request", "Only 'S256' code_challenge_method is supported", 400
+            )
+        if not code_challenge:
+            return error_response(
+                "invalid_request", "Missing code_challenge for PKCE", 400
+            )
+
+        return render_authorize_html(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            scope=scope,
+            state=state,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+        )
+
+    elif request.method == "POST":
+        # Handle POST request: Process user consent submission
+        form = await request.form()
+        client_id = form.get("client_id")
+        redirect_uri = form.get("redirect_uri")
+        code_challenge = form.get("code_challenge")
+        code_challenge_method = form.get("code_challenge_method", "S256")
+        scope = form.get("scope", "")
+        state = form.get("state", "")
+        password = form.get("password", "")
+
+        client = storage.get_client(client_id)
+        if not client:
+            return error_response("invalid_client", "Unknown client_id", 400)
+        elif redirect_uri not in client.redirect_uris:
+            return error_response(
+                "invalid_request", "redirect_uris does not match registered URI", 400
+            )
+
+        # verify password first
+        owner: storage.Owner = storage.get_owner()
+        if not core.verify_password(password, owner.password_hash, owner.salt):
+            return render_authorize_html(
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                scope=scope,
+                state=state,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method,
+                error_message="Invalid Password. Please Try Again",
+            )
+
+        # Save the authorization code with PKCE challenge
+        code = core.generate_token(32)
+        auth_code = storage.AuthCode(
+            code_hash=core.hash_token(code),
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            scope=scope,
+            code_challenge=code_challenge,
+            expires_at=(datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
+        )
+        storage.save_code(auth_code)
+
+        # Redirect back to the client with the authorization code
+        redirect_url = f"{redirect_uri}?code={code}&state={state}"
+        return RedirectResponse(redirect_url, status_code=302)
+
+
 routes = [
-    Route("/mcp", mcp),
-    Route("/", hello),
-    Route("/user", get_user),
-    Route("/post", test_post, methods=["POST"]),
-    # ... actual OAuth endpoints
     Route("/.well-known/oauth-authorization-server", oauth_metadata),
     Route("/.well-known/oauth-protected-resource", resource_metadata),
     Route("/.well-known/openid-configuration", oauth_metadata),  # Gemini fallback
     Route("/oauth/token", oauth_token, methods=["POST"]),
+    # RFC 6749 requires both GET (for authorization code flow) & POST (for form submission) for the authorization endpoint
+    Route(
+        "/oauth/authorize", oauth_authorize, methods=["GET", "POST"]
+    ),  # authorization endpoint
 ]
 
 
