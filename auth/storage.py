@@ -3,6 +3,7 @@
 Functions operate directly on SQLite tables (as_owner, as_clients, as_codes, as_tokens) using the shared cached connection from db.database.
 """
 
+import json
 import sqlite3 as sql
 from datetime import UTC, datetime
 from typing import Literal
@@ -22,6 +23,16 @@ class Client(BaseModel):
     client_secret_hash: str = Field(min_length=64, max_length=64)
     redirect_uris: list[str] = Field(min_length=1)
 
+    @classmethod
+    def from_row(cls, row: sql.Row) -> "Client":
+        """Create a Client instance from a database row."""
+        return cls(
+            client_id=row["client_id"],
+            client_name=row["client_name"],
+            client_secret_hash=row["client_secret_hash"],
+            redirect_uris=json.loads(row["redirect_uris"]),
+        )
+
 
 class Owner(BaseModel):
     """Single system owner credentials."""
@@ -30,7 +41,11 @@ class Owner(BaseModel):
 
     password_hash: str = Field(min_length=32)
     salt: str = Field(min_length=16)
-    
+
+    @classmethod
+    def from_row(cls, row: sql.Row) -> "Owner":
+        """Create an Owner instance from a database row."""
+        return cls(password_hash=row["password_hash"], salt=row["salt"])
 
 
 class AuthCode(BaseModel):
@@ -54,6 +69,20 @@ class AuthCode(BaseModel):
             exp_dt = datetime.fromisoformat(exp)
             exp = exp_dt if exp_dt.tzinfo else exp_dt.replace(tzinfo=UTC)
         return datetime.now(UTC) > exp
+
+    @classmethod
+    def from_row(cls, row: sql.Row) -> "AuthCode":
+        """Create an AuthCode instance from a database row."""
+        return cls(
+            code_hash=row["code_hash"],
+            client_id=row["client_id"],
+            redirect_uri=row["redirect_uri"],
+            scope=row["scope"],
+            code_challenge=row["code_challenge"],
+            code_challenge_method=row["code_challenge_method"],
+            resource=row["resource"],
+            expires_at=row["expires_at"],
+        )
 
 
 class Token(BaseModel):
@@ -79,14 +108,27 @@ class Token(BaseModel):
             exp = exp_dt if exp_dt.tzinfo else exp_dt.replace(tzinfo=UTC)
         return datetime.now(UTC) <= exp
 
+    @classmethod
+    def from_row(cls, row: sql.Row) -> "Token":
+        """Create a Token instance from a database row."""
+        return cls(
+            token_hash=row["token_hash"],
+            client_id=row["client_id"],
+            token_type=row["token_type"],
+            scope=row["scope"],
+            resource=row["resource"],
+            expires_at=row["expires_at"],
+            revoked=row["revoked"],
+        )
 
-def get_owner() -> dict | None:
+
+def get_owner() -> Owner | None:
     try:
         """Retrieve owner credentials from as_owner table (id = 1)."""
         conn = get_connection()
         row = conn.execute("SELECT * FROM as_owner WHERE id = 1").fetchone()
         if row:
-            return dict(row)
+            return Owner.from_row(row)
         return None
     except sql.Error as e:
         print(f"Error getting Owner: {e}")
@@ -109,7 +151,7 @@ def set_owner(password_hash: str, salt: str) -> bool:
     return True
 
 
-def get_client(client_id: str) -> dict | None:
+def get_client(client_id: str) -> Client | None:
     """Retrieve static pre-registered client by ID from as_clients table."""
     try:
         conn = get_connection()
@@ -117,28 +159,26 @@ def get_client(client_id: str) -> dict | None:
             "SELECT * FROM as_clients WHERE client_id = ?", (client_id,)
         ).fetchone()
         if row:
-            return dict(
-                row
-            )  # redirect_uris is stored as a JSON string, so you may want to parse it if needed
+            return Client.from_row(row)
         return None
     except sql.Error as e:
         print(f"Error getting Client: {e}")
         return None
 
 
-def save_code(code: dict) -> bool:
+def save_code(code: AuthCode) -> bool:
     """Store short-lived PKCE authorization code in as_codes table."""
     try:
         conn = get_connection()
         conn.execute(
             "INSERT INTO as_codes (code_hash, client_id, redirect_uri, scope, code_challenge, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
             (
-                code.get("code_hash"),
-                code.get("client_id"),
-                code.get("redirect_uri"),
-                code.get("scope"),
-                code.get("code_challenge"),
-                code.get("expires_at"),
+                code.code_hash,
+                code.client_id,
+                code.redirect_uri,
+                code.scope,
+                code.code_challenge,
+                code.expires_at,
             ),
         )
         conn.commit()
@@ -149,7 +189,7 @@ def save_code(code: dict) -> bool:
     return True
 
 
-def consume_code(code_hash: str) -> dict | None:
+def consume_code(code_hash: str) -> AuthCode | None:
     """Fetch and burn the code atomically (single-use per RFC 7636)."""
     try:
         conn = get_connection()
@@ -159,7 +199,11 @@ def consume_code(code_hash: str) -> dict | None:
 
         conn.commit()
         if row:
-            return dict(row)
+            auth_code = AuthCode.from_row(row)  # Convert to AuthCode instance if needed
+            if auth_code.is_expired:
+                print(f"Code {code_hash} is expired.")
+                return None
+            return auth_code
         return None
     except sql.Error as e:
         conn.rollback()
@@ -167,20 +211,20 @@ def consume_code(code_hash: str) -> dict | None:
         return None
 
 
-def save_token(token: dict) -> bool:
+def save_token(token: Token) -> bool:
     """Store an access or refresh token in as_tokens table."""
     try:
         conn = get_connection()
         conn.execute(
             "INSERT INTO as_tokens (token_hash, client_id, token_type, scope, expires_at, resource, revoked) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                token.get("token_hash"),
-                token.get("client_id"),
-                token.get("token_type"),
-                token.get("scope"),
-                token.get("expires_at"),
-                token.get("resource"),
-                token.get("revoked", False),
+                token.token_hash,
+                token.client_id,
+                token.token_type,
+                token.scope,
+                token.expires_at,
+                token.resource,
+                token.revoked,
             ),
         )
         conn.commit()
@@ -191,7 +235,7 @@ def save_token(token: dict) -> bool:
     return True
 
 
-def get_token(token_hash: str) -> dict | None:
+def get_token(token_hash: str) -> Token | None:
     """Retrieve token from as_tokens only if active, unexpired, and unrevoked (revoked = 0)."""
     try:
         conn = get_connection()
@@ -200,7 +244,7 @@ def get_token(token_hash: str) -> dict | None:
             (token_hash,),
         ).fetchone()
         if row:
-            return dict(row)
+            return Token.from_row(row)
         return None
     except sql.Error as e:
         print(f"Error getting Token: {e}")
