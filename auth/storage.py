@@ -4,72 +4,80 @@ Functions operate directly on SQLite tables (as_owner, as_clients, as_codes, as_
 """
 
 import sqlite3 as sql
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from db.database import get_connection
 
 
-@dataclass(frozen=True)
-class Client:
+class Client(BaseModel):
     """Pre-registered confidential OAuth client."""
 
-    client_id: str
-    client_secret: str
-    client_name: str
-    redirect_uris: list[str]
+    model_config = ConfigDict(from_attributes=True, frozen=True)
+
+    client_id: str = Field(min_length=1, max_length=50)
+    client_name: str = Field(min_length=1, max_length=100)
+    client_secret_hash: str = Field(min_length=64, max_length=64)
+    redirect_uris: list[str] = Field(min_length=1)
 
 
-@dataclass(frozen=True)
-class Owner:
+class Owner(BaseModel):
     """Single system owner credentials."""
 
-    password_hash: str
-    salt: str
+    model_config = ConfigDict(from_attributes=True, frozen=True)
+
+    password_hash: str = Field(min_length=32)
+    salt: str = Field(min_length=16)
+    
 
 
-@dataclass(frozen=True)
-class AuthCode:
+class AuthCode(BaseModel):
     """Short-lived PKCE authorization code."""
 
-    code_hash: str
-    client_id: str
-    code_challenge: str
-    redirect_uri: str
-    scope: str
-    expires_at: datetime
-    code_challenge_method: str = "S256"
-    resource: str | None = None
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(UTC)
-    )  # currently using this otherwise created by DB
+    model_config = ConfigDict(from_attributes=True, frozen=True)
 
-    # currently using this otherwise managed by DB
+    code_hash: str = Field(min_length=64, max_length=64)
+    client_id: str = Field(min_length=1)
+    redirect_uri: str = Field(min_length=1)
+    scope: str = ""
+    code_challenge: str = Field(min_length=43, max_length=128)
+    code_challenge_method: Literal["S256"] = "S256"
+    resource: str | None = None
+    expires_at: datetime | str
+
     @property
     def is_expired(self) -> bool:
-        return datetime.now(UTC) > self.expires_at
+        exp = self.expires_at
+        if isinstance(exp, str):
+            exp_dt = datetime.fromisoformat(exp)
+            exp = exp_dt if exp_dt.tzinfo else exp_dt.replace(tzinfo=UTC)
+        return datetime.now(UTC) > exp
 
 
-@dataclass(frozen=True)
-class Token:
+class Token(BaseModel):
     """Issued access or refresh token."""
 
-    token_hash: str
-    client_id: str
-    token_type: str  # 'access' or 'refresh'
-    scope: str
-    expires_at: datetime
-    resource: str | None = None
-    revoked: bool = False
+    model_config = ConfigDict(from_attributes=True, frozen=True)
 
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    last_used_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    token_hash: str = Field(min_length=64, max_length=64)
+    client_id: str = Field(min_length=1)
+    token_type: Literal["access", "refresh"]
+    scope: str = ""
+    resource: str | None = None
+    expires_at: datetime | str
+    revoked: bool = False
 
     @property
     def is_valid(self) -> bool:
         if self.revoked:
             return False
-        return datetime.now(UTC) <= self.expires_at
+        exp = self.expires_at
+        if isinstance(exp, str):
+            exp_dt = datetime.fromisoformat(exp)
+            exp = exp_dt if exp_dt.tzinfo else exp_dt.replace(tzinfo=UTC)
+        return datetime.now(UTC) <= exp
 
 
 def get_owner() -> dict | None:
