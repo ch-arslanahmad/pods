@@ -3,6 +3,8 @@ import hashlib
 import os
 import secrets
 
+from argon2.low_level import Type, hash_secret_raw
+
 
 def generate_token(nbytes: int = 32) -> str:
     """Generate a cryptographically secure, URL-safe random string."""
@@ -29,23 +31,24 @@ def verify_pkce(code_verifier: str, code_challenge: str) -> bool:
 
 
 def hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:
-    """Securely hash password using scrypt (memory-hard). Returns (hash_hex, salt_hex)."""
+    """Hash a password with Argon2id (memory-hard KDF). Returns (hash_hex, salt_hex)."""
     if salt is None:
         salt = os.urandom(16)  # if no salt is provided, generate a new random salt
 
-    # if salt provided, encode in utf-8, use salt to
-    hash_bytes = hashlib.scrypt(
-        password.encode("utf-8"),
-        salt=salt,  # use provided salt
-        n=16384,  # CPU/memory cost parameter
-        r=8,  # block size parameter
-        p=1,  # parallelization parameter
+    hash_bytes = hash_secret_raw(
+        secret=password.encode("utf-8"),
+        salt=salt,
+        time_cost=3,        # iterations
+        memory_cost=65536,  # 64 MiB RAM
+        parallelism=4,      # lanes
+        hash_len=32,
+        type=Type.ID,       # Argon2id
     )
     return hash_bytes.hex(), salt.hex()
 
 
 def verify_password(password: str, password_hash: str, salt_hex: str) -> bool:
-    """Verify plaintext password against stored scrypt hash in constant time."""
+    """Verify plaintext password against stored Argon2id hash in constant time."""
     salt = bytes.fromhex(salt_hex)
     computed_hash, _ = hash_password(password, salt=salt)
     return secrets.compare_digest(computed_hash, password_hash)

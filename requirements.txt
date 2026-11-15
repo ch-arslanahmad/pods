@@ -5,3 +5,4 @@ uvicorn>=0.20.0
 click>=8.0.0
 pytest>=7.0.0
 types-click
+argon2-cffi>=21.3.0
