@@ -259,6 +259,16 @@ async def revoke_token(request) -> JSONResponse:
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "authorize.html"
 
 
+def match_redirect_uri(redirect_uri: str | None, registered_uris: list[str]) -> bool:
+    """Validate redirect_uri against registered URIs, supporting /* wildcard prefixes."""
+    if not redirect_uri:
+        return False
+    return redirect_uri in registered_uris or any(
+        reg.endswith("/*") and redirect_uri.startswith(reg[:-1])
+        for reg in registered_uris
+    )
+
+
 def render_authorize_html(
     client_id: str,
     redirect_uri: str,
@@ -309,7 +319,7 @@ async def oauth_authorize(request) -> HTMLResponse | RedirectResponse:
         client = storage.get_client(client_id)
         if not client:
             return error_response("invalid_client", "Unknown client_id", 400)
-        if not redirect_uri or redirect_uri not in client.redirect_uris:
+        if not redirect_uri or not match_redirect_uri(redirect_uri, client.redirect_uris):
             return error_response(
                 "invalid_request", "redirect_uri does not match registered URI", 400
             )
@@ -351,9 +361,9 @@ async def oauth_authorize(request) -> HTMLResponse | RedirectResponse:
         client = storage.get_client(client_id)
         if not client:
             return error_response("invalid_client", "Unknown client_id", 400)
-        elif redirect_uri not in client.redirect_uris:
+        elif not match_redirect_uri(redirect_uri, client.redirect_uris):
             return error_response(
-                "invalid_request", "redirect_uris does not match registered URI", 400
+                "invalid_request", "redirect_uri does not match registered URI", 400
             )
 
         # verify password first

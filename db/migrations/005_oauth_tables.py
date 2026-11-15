@@ -105,11 +105,15 @@ CLIENTS: dict[str, tuple[str, list[str]]] = {
         "ChatGPT",
         [
             "https://chatgpt.com/connector_platform_oauth_redirect",
+            "https://chatgpt.com/connector/oauth/*",
+            "https://chat.openai.com/aip/*",
         ],
     ),
     "gemini": (
         "Google Gemini",
         [
+            "https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-2bf5c976f6ac4f92e21668d9",
+            "https://oauth-redirect.googleusercontent.com/r/*",
             "https://oauth-redirect.googleusercontent.com/r/pods",
         ],
     ),
