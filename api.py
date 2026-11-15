@@ -1,8 +1,15 @@
-from starlette.responses import JSONResponse
+import json
+import sqlite3
 
-from server import mcp
+from starlette.applications import Starlette
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Mount, Route
+
+from auth import core, storage
+from auth.endpoints import app as auth_app
 from db import db_operations as db
-
+from server import mcp
 
 OPENAPI_SPEC = {
     "openapi": "3.0.0",
@@ -131,7 +138,7 @@ async def create_pod(request):
         return await _json(db.get_pod(pod_id), 201)
     except KeyError as e:
         return await _error(f"Missing required field: {e}")
-    except Exception as e:
+    except (json.JSONDecodeError, ValueError, sqlite3.Error) as e:
         return await _error(str(e))
 
 
@@ -149,7 +156,7 @@ async def update_pod(request):
         if result is None:
             return await _error("Not found", 404)
         return await _json(result)
-    except Exception as e:
+    except (json.JSONDecodeError, ValueError, sqlite3.Error) as e:
         return await _error(str(e))
 
 
@@ -173,17 +180,59 @@ async def openapi_spec(_request= None):
     return JSONResponse(OPENAPI_SPEC)
 
 
-def create_app():
-    app = mcp.streamable_http_app()
+class OAuthProtectionMiddleware(BaseHTTPMiddleware):
+    """Enforce OAuth 2.1 Bearer authentication on /mcp (RFC 9728 & RFC 6749)."""
 
-    app.add_route("/api/ping", ping, methods=["GET"])
-    app.add_route("/api/pods", list_pods, methods=["GET"])
-    app.add_route("/api/pods", create_pod, methods=["POST"])
-    app.add_route("/api/pods/{pod_id}", get_pod, methods=["GET"])
-    app.add_route("/api/pods/{pod_id}", update_pod, methods=["PATCH"])
-    app.add_route("/api/pods/{pod_id}", delete_pod, methods=["DELETE"])
-    app.add_route("/api/categories", list_categories, methods=["GET"])
-    app.add_route("/api/projects", list_projects, methods=["GET"])
-    app.add_route("/api/openapi.json", openapi_spec, methods=["GET"])
+    async def dispatch(self, request, call_next) -> Response:
+        if request.url.path == "/mcp":
+            auth_header = request.headers.get("authorization")
+            base_url = str(request.base_url).rstrip("/")
+
+            # Unauthenticated: challenge with 401 and resource metadata location
+            if not auth_header or not auth_header.startswith("Bearer "):
+                return Response(
+                    "Unauthorized",
+                    status_code=401,
+                    headers={
+                        "WWW-Authenticate": (
+                            f'Bearer resource_metadata="{base_url}/.well-known/oauth-protected-resource", '
+                            'scope="pods:read pods:write"'
+                        )
+                    },
+                )
+
+            token = auth_header.split(" ", 1)[1]
+            token_hash = core.hash_token(token)
+            stored = storage.get_token(token_hash)
+
+            if not stored or stored.token_type != "access":
+                return Response(
+                    "Invalid or expired token",
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+                )
+
+            request.state.client_id = stored.client_id # for provenance tracking of the client making the request (useful later on)
+
+        return await call_next(request)
+
+
+def create_app() -> Starlette:
+    routes = [
+        Route("/api/ping", ping, methods=["GET"]),
+        Route("/api/pods", list_pods, methods=["GET"]),
+        Route("/api/pods", create_pod, methods=["POST"]),
+        Route("/api/pods/{pod_id}", get_pod, methods=["GET"]),
+        Route("/api/pods/{pod_id}", update_pod, methods=["PATCH"]),
+        Route("/api/pods/{pod_id}", delete_pod, methods=["DELETE"]),
+        Route("/api/categories", list_categories, methods=["GET"]),
+        Route("/api/projects", list_projects, methods=["GET"]),
+        Route("/api/openapi.json", openapi_spec, methods=["GET"]),
+        Mount("/", app=auth_app),
+    ]
+
+    app: Starlette = mcp.streamable_http_app()
+    app.add_middleware(OAuthProtectionMiddleware) # adds requireenment of OAuth for /mcp
+    app.routes.extend(routes)
 
     return app
