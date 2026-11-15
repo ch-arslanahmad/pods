@@ -1,97 +1,13 @@
 import base64
-import json
-from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+import binascii
+import secrets
+from datetime import UTC, datetime, timedelta
 
-from pydantic import field_validator
 from starlette.applications import Starlette
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
 
-
-@dataclass
-class User:
-    id: int
-    name: str
-    age: int
-
-
-# ! === this is testing ===
-async def get_user(request) -> JSONResponse:
-    return JSONResponse(asdict(User(id=1, name="Alice", age=30)))
-
-
-async def mcp(request) -> PlainTextResponse:
-    return PlainTextResponse("This is an MCP")
-
-
-async def hello(request):
-    return PlainTextResponse("hello World")
-
-
-## a testing pydantic class for POST requests (error if not valid JSON)
-
-
-class PostData:
-
-    id: int
-    name: str
-    age: int
-    # Pydantic v2: extra="forbid" rejects unknown fields
-    model_config = {"extra": "forbid"}
-
-    @field_validator("id", mode="before")
-    def validate_id(cls, v):
-        if not isinstance(v, int):
-            raise ValueError("id must be an integer")
-        elif v < 0:
-            raise ValueError("id must be non-negative")
-        return v
-
-    @field_validator("age", mode="before")
-    def validate_age(cls, v):
-        if not isinstance(v, int):
-            raise ValueError("age must be an integer")
-        elif v < 0:
-            raise ValueError("age must be non-negative")
-        elif v >= 18:
-            raise ValueError("age must be less than 18")
-        elif v < 150:
-            raise ValueError("age must be less than 150")
-        return v
-
-    @field_validator("name", mode="before")
-    def validate_name(cls, v):
-        if not isinstance(v, str):
-            raise ValueError("name must be a string")
-        elif len(v) == 0:
-            raise ValueError("name must be non-empty")
-        return v
-
-    def __init__(self, data: dict):
-        self.data = data
-
-
-async def test_post(request) -> JSONResponse:
-    try:
-        post_data = PostData(await request.json())
-        return JSONResponse(
-            {
-                "message": "This is a POST request with data: ",
-                "data": str(post_data.data),
-            }
-        )
-    except json.JSONDecodeError as e:
-        return JSONResponse(
-            {"error": "invalid_json", "message": str(e)}, status_code=400
-        )
-    except Exception as e:
-        return JSONResponse(
-            {"error": "bad_request", "message": str(e)}, status_code=400
-        )
-
-
-# ... the actual OAuth setup
+from auth import core, storage
 
 
 def error_response(error: str, message: str, status_code: int = 400) -> JSONResponse:
@@ -133,6 +49,9 @@ async def resource_metadata(request) -> JSONResponse:
 # Get OAuth token (access/refresh) endpoint (POST only, per RFC 6749)
 async def oauth_token(request) -> JSONResponse:
 
+    client_id = None
+    client_secret = None
+
     form = await request.form()
     grant_type = form.get("grant_type")  # get grant type
 
@@ -149,11 +68,14 @@ async def oauth_token(request) -> JSONResponse:
 
             # get client secret, required as per Confidential clients like Claude Web, ChatGPT Web etc
             client_id, client_secret = decoded_credentials.split(":", 1)
-        except Exception as e:
+        except (binascii.Error, UnicodeDecodeError, ValueError):
             return error_response(
                 "invalid_request", "Invalid Authorization header", 400
             )
-    import storage
+
+    else:  # in case sending details in
+        client_id = form.get("client_id")
+        client_secret = form.get("client_secret")
 
     # verify client_id and client_secret are provided
     if not client_id:
@@ -163,7 +85,10 @@ async def oauth_token(request) -> JSONResponse:
 
     # verify client credentials against storage
     client = storage.get_client(client_id)
-    if not client or client.client_secret != client_secret:
+
+    if not client or not secrets.compare_digest(
+        core.hash_token(client_secret), client.client_secret_hash
+    ):
         return error_response("invalid_client", "Invalid client credentials", 401)
 
     # If we get here, the client is valid
@@ -179,10 +104,8 @@ async def oauth_token(request) -> JSONResponse:
                 "invalid_request", "Missing code or code_verifier", 400
             )
 
-        import core
-
         code_hash = core.hash_token(code)  # hash the code
-        auth_code = storage.consume_code(
+        auth_code: storage.AuthCode = storage.consume_code(
             code_hash
         )  # single-use code for authentication
 
@@ -204,9 +127,7 @@ async def oauth_token(request) -> JSONResponse:
             return error_response("invalid_grant", "PKCE verification failed", 400)
 
         # TOKEN MINTING (access + refresh)
-        from datetime import datetime, timedelta, timezone
-
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         ## 1. 1 hour access token
         access_token = core.generate_token()
@@ -217,7 +138,7 @@ async def oauth_token(request) -> JSONResponse:
                 token_hash=core.hash_token(access_token),
                 client_id=client_id,
                 token_type="access",
-                expires_at=now + timedelta(hours=1),
+                expires_at=(now + timedelta(hours=1)).isoformat(), # get in datetime format
                 scope=auth_code.scope,
             )
         )
@@ -230,7 +151,7 @@ async def oauth_token(request) -> JSONResponse:
                 token_hash=core.hash_token(refresh_token),
                 client_id=client_id,
                 token_type="refresh",
-                expires_at=now + timedelta(days=30),
+                expires_at=(now + timedelta(days=30)).isoformat(), # get in datetime format
                 scope=auth_code.scope,
             )
         )
@@ -251,8 +172,6 @@ async def oauth_token(request) -> JSONResponse:
         if not refresh_token:
             return error_response("invalid_request", "Missing refresh_token", 400)
 
-        import core
-
         token_hash = core.hash_token(refresh_token)
         token: storage.Token = storage.get_token(token_hash)
 
@@ -267,7 +186,7 @@ async def oauth_token(request) -> JSONResponse:
             )
 
         # Slide expiry window: reset to 30 days from now
-        new_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+        new_expires_at = (datetime.now(UTC) + timedelta(days=30)).isoformat()
         storage.update_refresh_token_expiry(token_hash, new_expires_at)
 
         # Mint a new access token
@@ -277,7 +196,7 @@ async def oauth_token(request) -> JSONResponse:
                 token_hash=core.hash_token(access_token),
                 client_id=token.client_id,
                 token_type="access",
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                expires_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat(),
                 scope=token.scope,
             )
         )
@@ -363,7 +282,6 @@ app: Starlette = Starlette(
 
 if __name__ == "__main__":
     import uvicorn
-    from starlette.applications import Starlette
 
     print("Serving OAuth endpoints on http://127.0.0.1:5111 ...")
     uvicorn.run(app, host="127.0.0.1", port=5111)
