@@ -32,13 +32,14 @@ CREATE TABLE IF NOT EXISTS as_owner (
     salt          TEXT NOT NULL,
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
-
+/*
 CREATE TABLE IF NOT EXISTS as_sessions (
     id           TEXT PRIMARY KEY,
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     last_seen_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     expires_at   TEXT NOT NULL
 );
+*/
 
 CREATE TABLE IF NOT EXISTS as_clients (
     client_id          TEXT PRIMARY KEY,
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS as_codes (
     created_at            TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+/*
 CREATE TABLE IF NOT EXISTS as_grants (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     client_id  TEXT NOT NULL REFERENCES as_clients(client_id) ON DELETE CASCADE,
@@ -68,6 +70,7 @@ CREATE TABLE IF NOT EXISTS as_grants (
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     revoked_at TEXT
 );
+*/
 
 CREATE TABLE IF NOT EXISTS as_tokens (
     token_hash   TEXT PRIMARY KEY,
@@ -120,9 +123,9 @@ def upgrade(conn):
     # clean set instead of old rows sitting next to freshly generated secrets.
     for table in (
         "as_tokens",
-        "as_grants",
+        # "as_grants",
         "as_codes",
-        "as_sessions",
+        # "as_sessions",
         "as_clients",
         "as_owner",
     ):

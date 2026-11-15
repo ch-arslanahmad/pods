@@ -1,13 +1,13 @@
-"""In-memory OAuth storage prototype with strict dataclass models.
+"""SQLite-backed OAuth 2.1 storage.
 
-Exposes clean module-level functions (matching db/db_operations.py conventions)
-while using dataclasses for type safety and IDE autocomplete.
+Functions operate directly on SQLite tables (as_owner, as_clients, as_codes, as_tokens) using the shared cached connection from db.database.
 """
 
+import sqlite3 as sql
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-# --- Data Models (Java Record Style) ---
+from db.database import get_connection
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class Client:
     redirect_uris: list[str]
 
 
-@dataclass
+@dataclass(frozen=True)
 class Owner:
     """Single system owner credentials."""
 
@@ -28,7 +28,7 @@ class Owner:
     salt: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class AuthCode:
     """Short-lived PKCE authorization code."""
 
@@ -41,16 +41,16 @@ class AuthCode:
     code_challenge_method: str = "S256"
     resource: str | None = None
     created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.UTC)
+        default_factory=lambda: datetime.now(UTC)
     )  # currently using this otherwise created by DB
 
     # currently using this otherwise managed by DB
     @property
     def is_expired(self) -> bool:
-        return datetime.now(timezone.UTC) > self.expires_at
+        return datetime.now(UTC) > self.expires_at
 
 
-@dataclass
+@dataclass(frozen=True)
 class Token:
     """Issued access or refresh token."""
 
@@ -62,121 +62,185 @@ class Token:
     resource: str | None = None
     revoked: bool = False
 
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.UTC))  #
-    last_used_at: datetime = field(default_factory=lambda: datetime.now(timezone.UTC))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    last_used_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def is_valid(self) -> bool:
         if self.revoked:
             return False
-        return datetime.now(timezone.UTC) <= self.expires_at
+        return datetime.now(UTC) <= self.expires_at
 
 
-# --- In-Memory State ---
-
-_owner = Owner(password_hash="dummy_hash", salt="dummy_salt")
-
-_clients: dict[str, Client] = {
-    "claude": Client(
-        client_id="claude",
-        client_secret="claude-test-secret",
-        client_name="Claude Web",
-        redirect_uris=[
-            "https://claude.ai/api/mcp/auth_callback",
-            "http://127.0.0.1/callback",
-            "http://localhost/callback",
-        ],
-    ),
-    "chatgpt": Client(
-        client_id="chatgpt",
-        client_secret="chatgpt-test-secret",
-        client_name="ChatGPT",
-        redirect_uris=[
-            "https://chatgpt.com/api/mcp/auth_callback",
-            "http://localhost/callback",
-        ],
-    ),
-    "gemini": Client(
-        client_id="gemini",
-        client_secret="gemini-test-secret",
-        client_name="Google Gemini",
-        redirect_uris=[
-            "https://oauth-redirect.googleusercontent.com/r/pods",
-            "http://localhost/callback",
-        ],
-    ),
-}
-
-_codes: dict[str, AuthCode] = {}
-_tokens: dict[str, Token] = {}
-
-
-# --- Module-Level Storage Operations ---
-
-
-def get_owner() -> Owner:
-    """Retrieve owner credentials for login validation."""
-    return _owner
-
-
-def set_owner(password_hash: str, salt: str) -> None:
-    """Update owner credentials."""
-    global _owner
-    _owner = Owner(password_hash=password_hash, salt=salt)
-
-
-def get_client(client_id: str) -> Client | None:
-    """Retrieve static pre-registered client by ID."""
-    return _clients.get(client_id)
-
-
-def save_code(code: AuthCode) -> None:
-    """Store short-lived PKCE authorization code."""
-    _codes[code.code_hash] = code
-
-
-def consume_code(code_hash: str) -> AuthCode | None:
-    """Fetch and burn the code atomically (single-use per RFC 7636)."""
-    code = _codes.pop(code_hash, None)
-    if not code or code.is_expired:
+def get_owner() -> dict | None:
+    try:
+        """Retrieve owner credentials from as_owner table (id = 1)."""
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM as_owner WHERE id = 1").fetchone()
+        if row:
+            return dict(row)
         return None
-    return code
-
-
-def save_token(token: Token) -> None:
-    """Store an access or refresh token."""
-    _tokens[token.token_hash] = token
-
-
-def get_token(token_hash: str) -> Token | None:
-    """Retrieve token only if active, unexpired, and unrevoked."""
-    token = _tokens.get(token_hash)
-    if not token or not token.is_valid:
+    except sql.Error as e:
+        print(f"Error getting Owner: {e}")
         return None
-    return token
 
 
-def update_refresh_token_expiry(token_hash: str, new_expires_at: datetime) -> bool:
-    """Reset the expiration timestamp and update last_used_at for a valid refresh token."""
-    token = _tokens.get(token_hash)
-    if not token or not token.is_valid:
+def set_owner(password_hash: str, salt: str) -> bool:
+    """Update or insert owner credentials in as_owner table (id = 1)."""
+    try:
+        conn = get_connection()
+        conn.execute(
+            "INSERT OR REPLACE INTO as_owner (id, password_hash, salt) VALUES (1, ?, ?)",
+            (password_hash, salt),
+        )
+        conn.commit()
+    except sql.Error as e:
+        conn.rollback()
+        print(f"Error setting Owner: {e}")
         return False
-    token.expires_at = new_expires_at
-    token.last_used_at = datetime.now(timezone.UTC)
     return True
 
 
-def revoke_client(client_id: str) -> int:
+def get_client(client_id: str) -> dict | None:
+    """Retrieve static pre-registered client by ID from as_clients table."""
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM as_clients WHERE client_id = ?", (client_id,)
+        ).fetchone()
+        if row:
+            return dict(
+                row
+            )  # redirect_uris is stored as a JSON string, so you may want to parse it if needed
+        return None
+    except sql.Error as e:
+        print(f"Error getting Client: {e}")
+        return None
+
+
+def save_code(code: dict) -> bool:
+    """Store short-lived PKCE authorization code in as_codes table."""
+    try:
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO as_codes (code_hash, client_id, redirect_uri, scope, code_challenge, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                code.get("code_hash"),
+                code.get("client_id"),
+                code.get("redirect_uri"),
+                code.get("scope"),
+                code.get("code_challenge"),
+                code.get("expires_at"),
+            ),
+        )
+        conn.commit()
+    except sql.Error as e:
+        conn.rollback()
+        print(f"Error saving Code: {e}")
+        return False
+    return True
+
+
+def consume_code(code_hash: str) -> dict | None:
+    """Fetch and burn the code atomically (single-use per RFC 7636)."""
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "DELETE FROM as_codes WHERE code_hash = ? RETURNING *", (code_hash,)
+        ).fetchone()
+
+        conn.commit()
+        if row:
+            return dict(row)
+        return None
+    except sql.Error as e:
+        conn.rollback()
+        print(f"Error consuming Code: {e}")
+        return None
+
+
+def save_token(token: dict) -> bool:
+    """Store an access or refresh token in as_tokens table."""
+    try:
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO as_tokens (token_hash, client_id, token_type, scope, expires_at, resource, revoked) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                token.get("token_hash"),
+                token.get("client_id"),
+                token.get("token_type"),
+                token.get("scope"),
+                token.get("expires_at"),
+                token.get("resource"),
+                token.get("revoked", False),
+            ),
+        )
+        conn.commit()
+    except sql.Error as e:
+        conn.rollback()
+        print(f"Error saving Token: {e}")
+        return False
+    return True
+
+
+def get_token(token_hash: str) -> dict | None:
+    """Retrieve token from as_tokens only if active, unexpired, and unrevoked (revoked = 0)."""
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM as_tokens WHERE token_hash = ? AND revoked = 0 AND expires_at > CURRENT_TIMESTAMP",
+            (token_hash,),
+        ).fetchone()
+        if row:
+            return dict(row)
+        return None
+    except sql.Error as e:
+        print(f"Error getting Token: {e}")
+        return None
+
+
+def update_refresh_token_expiry(
+    token_hash: str, new_expires_at: datetime | str
+) -> bool:
+    try:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE as_tokens SET expires_at = ?, last_used_at = CURRENT_TIMESTAMP WHERE token_hash = ? AND token_type = 'refresh' AND revoked = 0",
+            (new_expires_at, token_hash),
+        )
+        conn.commit()
+        return conn.total_changes > 0
+    except sql.Error as e:
+        conn.rollback()
+        print(f"Error updating refresh token expiry: {e}")
+        return False
+    return True
+
+
+def revoke_client(client_id: str) -> bool:
     """Revoke all active tokens for a specific client (pod revoke / RFC 7009)."""
-    count = 0
-    for token in _tokens.values():
-        if token.client_id == client_id and not token.revoked:
-            token.revoked = True
-            count += 1
-    return count
+    try:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE as_tokens SET revoked = 1 WHERE client_id = ? AND revoked = 0",
+            (client_id,),
+        )
+        conn.commit()
+        return conn.total_changes > 0
+    except sql.Error as e:
+        conn.rollback()
+
+        print(f"Error revoking tokens for client {client_id}: {e}")
+        return False
 
 
 def clear_storage() -> None:
-    """Helper to clear volatile state between unit tests."""
-    _codes.clear()
-    _tokens.clear()
+    """Helper to clear volatile state (codes and tokens) between unit tests."""
+    try:
+        conn = get_connection()
+        conn.execute("DELETE FROM as_codes")
+        conn.execute("DELETE FROM as_tokens")
+        conn.commit()
+    except sql.Error as e:
+        conn.rollback()
+        print(f"Error clearing storage: {e}")
