@@ -85,10 +85,10 @@ CREATE TABLE IF NOT EXISTS as_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_as_codes_expiry    ON as_codes(expires_at);
-CREATE INDEX IF NOT EXISTS idx_as_sessions_expiry ON as_sessions(expires_at);
+-- CREATE INDEX IF NOT EXISTS idx_as_sessions_expiry ON as_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_as_tokens_client   ON as_tokens(client_id);
 CREATE INDEX IF NOT EXISTS idx_as_tokens_expiry   ON as_tokens(expires_at);
-CREATE INDEX IF NOT EXISTS idx_as_grants_client   ON as_grants(client_id);
+-- CREATE INDEX IF NOT EXISTS idx_as_grants_client   ON as_grants(client_id);
 """
 
 # Callback URLs are vendor-hosted, so tunnels never change them (pods 146/147).

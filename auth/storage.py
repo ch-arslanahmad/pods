@@ -5,11 +5,13 @@ Functions operate directly on SQLite tables (as_owner, as_clients, as_codes, as_
 
 import json
 import sqlite3 as sql
+import sys
 from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from db import database
 from db.database import get_connection
 
 
@@ -286,8 +288,37 @@ def revoke_client(client_id: str) -> bool:
         return False
 
 
+def revoke_token(token_hash: str) -> bool:
+    """Revoke a specific token (pod revoke / RFC 7009)."""
+    try:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE as_tokens SET revoked = 1 WHERE token_hash = ? AND revoked = 0",
+            (token_hash,),
+        )
+        conn.commit()
+        return conn.total_changes > 0
+    except sql.Error as e:
+        conn.rollback()
+        print(f"Error revoking token {token_hash}: {e}")
+        return False
+
 def clear_storage() -> None:
-    """Helper to clear volatile state (codes and tokens) between unit tests."""
+    """Helper to clear volatile state (codes and tokens) between unit tests.
+
+    SAFETY GUARD:
+    Guards live authentication data. This function strictly refuses to execute
+    if run outside of a temporary pytest sandbox (:memory: or tmp directory),
+    preventing live active sessions in db/pods.db from ever being wiped.
+    """
+    db_path_str = str(database.DB_PATH)
+    if "pytest" not in sys.modules or (
+        "tmp" not in db_path_str and ":memory:" not in db_path_str
+    ):
+        raise RuntimeError(
+            f"Safety guard: Refusing to clear OAuth storage on live database ({db_path_str})!"
+        )
+
     try:
         conn = get_connection()
         conn.execute("DELETE FROM as_codes")

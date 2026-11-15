@@ -47,6 +47,7 @@ async def resource_metadata(request) -> JSONResponse:
     return JSONResponse(data)
 
 
+# ? ENDPOINT: /oauth/token
 # Get OAuth token (access/refresh) endpoint (POST only, per RFC 6749)
 async def oauth_token(request) -> JSONResponse:
 
@@ -116,10 +117,10 @@ async def oauth_token(request) -> JSONResponse:
             return error_response(
                 "invalid_grant", "Authorization code was not issued to this client", 400
             )
-        elif form.get("redirect_uris") != auth_code.redirect_uris:
+        elif form.get("redirect_uri") != auth_code.redirect_uri:
             return error_response(
                 "invalid_grant",
-                "redirect_uris does not match authorization request",
+                "redirect_uri does not match authorization request",
                 400,
             )
 
@@ -233,7 +234,27 @@ This would return
     }
   ──────
 """
+# ? ENDPOINT: /oauth/revoke
+async def revoke_token(request) -> JSONResponse:
+    form = await request.form()
+    token = form.get("token")
+    if not token:
+        return error_response("invalid_request", "Token not found", 200) # RFC 7009 specifies that the endpoint should return 200 even if the token is invalid or not found
 
+    token_hash = core.hash_token(token)
+    stored_token: storage.Token = storage.get_token(token_hash)
+
+    if not stored_token:
+        return error_response("invalid_request", "Token not found", 200)
+
+    # Revoke the token
+    # storage.revoke_client(stored_token.client_id)  # ... revoke all tokens for the client
+    if stored_token.token_type == "refresh":
+        # If it's a refresh token, revoke all tokens for the client
+        storage.revoke_client(stored_token.client_id)
+    storage.revoke_token(token_hash)  # revoke only the specific token
+
+    return JSONResponse({"message": "Token revoked successfully"})
 
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "authorize.html"
 
@@ -265,7 +286,7 @@ def render_authorize_html(
     )
     return HTMLResponse(html)
 
-
+# ? ENDPOINT: /oauth/authorize
 async def oauth_authorize(request) -> HTMLResponse | RedirectResponse:
     """OAuth 2.0 Authorization Endpoint (RFC 6749). Handles GET for user consent and POST for form submission."""
 
@@ -374,6 +395,8 @@ routes = [
     Route(
         "/oauth/authorize", oauth_authorize, methods=["GET", "POST"]
     ),  # authorization endpoint
+    Route("/oauth/revoke", revoke_token, methods=["POST"]), # an alias
+    Route("/revoke", revoke_token, methods=["POST"]),  # RFC 7009 revocation endpoint
 ]
 
 
