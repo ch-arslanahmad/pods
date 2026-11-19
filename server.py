@@ -26,7 +26,7 @@ def pods_add(
     "pod_id": pod_id
     }
 
-@mcp.tool(description="Retrieve a pod by unique ID. Returns None if not found or soft-deleted.")
+@mcp.tool(description="Retrieve a pod by unique ID. Returns None if not found or soft-deleted.", readOnly=True)
 def pods_get(
     pod_id: int = Field(gt=0),
 ) -> dict | None:
@@ -51,7 +51,7 @@ def pods_delete(
     return {"deleted": db.delete_pod(pod_id), "id": pod_id}
 
 
-@mcp.tool(description="List all distinct category labels used across pods.")
+@mcp.tool(description="List all distinct category labels used across pods.", readOnly=True)
 def pods_list_categories() -> list[str]:
     return db.list_categories()
 
