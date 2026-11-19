@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 import click
+import logging
 
 NGROK_API = "http://localhost:4040/api/tunnels"
 NGROK_CONFIG = Path.home() / ".config" / "ngrok" / "ngrok.yml"
@@ -41,9 +42,19 @@ class TunnelProvider(ABC):
     def start(self, port: int = 8000) -> str | None:
         """Start the tunnel pointing to local port, returning the public URL."""
 
-    @abstractmethod
-    def stop(self) -> None:
-        """Stop the tunnel process."""
+    def _clear_state(self) -> None:
+        """Remove the persisted tunnel_state.json file if it exists.
+        This ensures `pod tunnel status` reflects the real runtime state
+        after a stop operation.
+        """
+        from pathlib import Path
+        import logging
+        state_path = Path.home() / ".config" / "pods" / "tunnel_state.json"
+        try:
+            if state_path.is_file():
+                state_path.unlink()
+        except Exception as exc:
+            logging.debug(f"Failed to clear tunnel state file: {exc}")
 
 
 class NgrokTunnel(TunnelProvider):
@@ -263,11 +274,20 @@ class TailscaleTunnel(TunnelProvider):
             click.secho(f"Tailscale Funnel ready: {url}", fg="green")
 
     def stop(self) -> None:
-        subprocess.run(
-            [self.binary, "serve", "--terminate"],
+        # 'tailscale serve --terminate' doesn't exist (invalid flag, silently
+        # swallowed before) — 'serve reset' clears the persisted serve/funnel
+        # config that tailscaled re-applies on every boot.
+        res = subprocess.run(
+            [self.binary, "serve", "reset"],
             capture_output=True,
+            text=True,
             check=False,
         )
+        if res.returncode != 0:
+            click.secho(
+                f"Failed to reset tailscale serve config: {res.stderr.strip()}",
+                fg="red",
+            )
 
 
 # Registry of available providers
@@ -362,15 +382,21 @@ def register(cli):
     )
     def stop(provider: str) -> None:
         """Stop running tunnel(s)."""
-        if provider == "all":
-            for p in PROVIDERS.values():
-                p.stop()
-            click.echo("All tunnels stopped.")
-        else:
-            p = PROVIDERS.get(provider)
-            if p:
-                p.stop()
-                click.echo(f"{provider} tunnel stopped.")
+        targets = PROVIDERS.values() if provider == "all" else [PROVIDERS.get(provider)]
+        stopped, failed = [], []
+        for p in targets:
+            if not p:
+                continue
+            p.stop()
+            # Verify: get_url() reflects real runtime state, not a claim
+            (failed if p.get_url() else stopped).append(p.name)
+        if stopped:
+            click.echo(f"Stopped: {', '.join(stopped)}.")
+        if failed:
+            click.secho(
+                f"Still running: {', '.join(failed)}. Check provider logs.",
+                fg="red",
+            )
 
     @tunnel.command(name="list")
     def list_cmd() -> None:
