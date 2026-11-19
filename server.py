@@ -3,8 +3,14 @@ import sys
 
 from pydantic import Field
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from db import db_operations as db
+
+# Hints read by ChatGPT/Gemini to badge tools read vs write (MCP ToolAnnotations)
+READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)
+DELETE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, openWorldHint=False)
 
 mcp = FastMCP(
     name="pods",
@@ -13,7 +19,10 @@ mcp = FastMCP(
 )  # 0.0.0.0 required for ngrok tunnel — 127.0.0.1 triggers DNS rebinding protection that blocks ngrok's Host header
 
 
-@mcp.tool(description="Add a new knowledge pod. Provide pod_name, category, content & project(optional). Returns the created pod.")
+@mcp.tool(
+    description="Add a new knowledge pod. Provide pod_name, category, content & project(optional). Returns the created pod.",
+    annotations=WRITE,
+)
 def pods_add(
     pod_name: str = Field(min_length=1, max_length=200),
     content: str = Field(min_length=1),
@@ -26,14 +35,20 @@ def pods_add(
     "pod_id": pod_id
     }
 
-@mcp.tool(description="Retrieve a pod by unique ID. Returns None if not found or soft-deleted.", readOnly=True)
+@mcp.tool(
+    description="Retrieve a pod by unique ID. Returns None if not found or soft-deleted.",
+    annotations=READ,
+)
 def pods_get(
     pod_id: int = Field(gt=0),
 ) -> dict | None:
     return db.get_pod(pod_id)
 
 
-@mcp.tool(description="Update fields on an existing pod (partial update)")
+@mcp.tool(
+    description="Update fields on an existing pod (partial update)",
+    annotations=WRITE,
+)
 def pods_update(
     pod_id: int = Field(gt=0),
     pod_name: str | None = Field(None, min_length=1, max_length=200),
@@ -44,19 +59,28 @@ def pods_update(
     return db.update_pod(pod_id, pod_name, content, project, category)
 
 
-@mcp.tool(description="Soft-delete a pod by ID. hidden but not permanently removed.")
+@mcp.tool(
+    description="Soft-delete a pod by ID. hidden but not permanently removed.",
+    annotations=DELETE,
+)
 def pods_delete(
     pod_id: int = Field(gt=0),
 ) -> dict:
     return {"deleted": db.delete_pod(pod_id), "id": pod_id}
 
 
-@mcp.tool(description="List all distinct category labels used across pods.", readOnly=True)
+@mcp.tool(
+    description="List all distinct category labels used across pods.",
+    annotations=READ,
+)
 def pods_list_categories() -> list[str]:
     return db.list_categories()
 
 
-@mcp.tool(description="Search or list pods. Provide query for FTS5 full-text search (matches pod_name/content), or use category/project to filter. created_after/created_before filter by date (YYYY-MM-DD). Returns newest first with 50 results, to get more results, increase the limit variable.")
+@mcp.tool(
+    description="Search or list pods. Provide query for FTS5 full-text search (matches pod_name/content), or use category/project to filter. created_after/created_before filter by date (YYYY-MM-DD). Returns newest first with 50 results, to get more results, increase the limit variable.",
+    annotations=READ,
+)
 def pods_find(
     query: str | None = None,
     category: str | None = None,
@@ -77,12 +101,18 @@ def pods_find(
     )
 
 
-@mcp.tool(description="List all distinct project labels used across pods.")
+@mcp.tool(
+    description="List all distinct project labels used across pods.",
+    annotations=READ,
+)
 def pods_list_projects() -> list[str]:
     return db.list_projects()
 
 
-@mcp.tool(description="Health check. 'pong' if alive.")
+@mcp.tool(
+    description="Health check. 'pong' if alive.",
+    annotations=READ,
+)
 def pods_ping() -> str:
     return "pong"
 
