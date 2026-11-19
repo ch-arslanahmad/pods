@@ -3,6 +3,7 @@ pydantic>=2.0.0
 starlette>=0.12.0
 uvicorn>=0.20.0
 click>=8.0.0
+httpx>=0.27.0
 pytest>=7.0.0
 types-click
 argon2-cffi>=21.3.0
