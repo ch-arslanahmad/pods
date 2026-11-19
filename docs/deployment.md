@@ -37,142 +37,119 @@ OpenCode connects directly via stdio — no network needed.
 > [!important]
 > Replace the command path with the absolute path, `~/Desktop/github/pods/.venv/bin/python` if running from outside the project directory. Tools auto-discover on launch.
 
-Cloudflare Tunnel provides HTTPS automatically — no extra setup needed.
+## Tunnels (Remote Ingress)
 
-Use naturally: "save this as a pod".
+Pods supports two tunnel providers for public HTTPS ingress without port-forwarding:
+1. **ngrok** (Free tier with reserved static domain)
+2. **Tailscale Funnel** (Free permanent `*.ts.net` domain per ADR 0003)
 
-## Cloudflare Tunnel (Recommended)
+Pods handles OAuth 2.1 internally; tunnels serve purely as transparent HTTPS pipes.
 
-Download at, [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/)
-Free, no interstitial page, works with any AI tool out of the box.
-
-### Usage
-
-```bash
-# 1. Start the server
-.venv/bin/python server.py --http
-
-# 2. In another terminal, expose it
-cloudflared tunnel --url http://localhost:8000
-```
-
-Output looks like:
-
-```
-Your quick Tunnel has been created! Visit it at:
-https://random-words.trycloudflare.com
-```
-
-### Claude Web
-
-Add a connector in Claude Web:
-
-- _**Settings > Connectors > Add Connector**_
-- Name: `pods`
-- Server URL: `<url>/sse` (e.g. `https://random-words.trycloudflare.com/sse`)
-- Save
-
-### REST API
-
-```
-https://random-words.trycloudflare.com/[endpoint]
-```
-
-No headers needed, no interstitial — works with curl, browsers, and AI tools immediately.
-
-### Caveats
-
-|             | Quick tunnel (`--url`)       | Named tunnel (Zero Trust)    |
-| ----------- | ---------------------------- | ---------------------------- |
-| **URL**     | Random, changes each restart | Your own domain, permanent   |
-| **Cost**    | Free                         | Free                         |
-| **Setup**   | One command                  | Requires domain + DNS config |
-| **Restart** | New URL each time            | Same URL always              |
-
-The quick tunnel is fine for testing. For daily use, set up a [named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/).
-
-It is alternative to ngrok which also works but its free tier gives one consistent URL page & that URL has one constant content unless you pay pay.
-
-### Install
-
-Download ngrok from [here.](https://ngrok.com/download/linux)
-
-### Authenticate
-
-Sign up at `https://dashboard.ngrok.com`, then copy your token:
+### Checking Provider Status
 
 ```bash
-ngrok config add-authtoken <your-token>
+pod tunnel list
 ```
 
-### Usage
+Outputs live installation and authentication status across providers:
+```
+Tunnel Providers:
+  ngrok        [installed (configured)] : stopped
+  tailscale    [installed (logged in)]   : stopped
+```
+
+---
+
+## 1. ngrok
+
+Recommended for immediate public access with a reserved static domain (`glacier-mantra-siren.ngrok-free.dev`).
+
+### Setup & Authentication
+```bash
+# Configure ngrok for pods (prompts for token if not already saved, writes static domain config)
+pod tunnel setup
+```
+
+### Starting the Tunnel
+```bash
+# Via pod CLI (recommended)
+pod tunnel ngrok start
+# (or: pod tunnel start ngrok)
+
+# Or manual raw command
+ngrok http --url=glacier-mantra-siren.ngrok-free.dev 8000
+```
+
+### Connector URL
+- **MCP Endpoint:** `https://<your-domain>.ngrok-free.dev/mcp`
+- **OAuth Discovery:** `https://<your-domain>.ngrok-free.dev/.well-known/oauth-authorization-server`
+
+---
+
+## 2. Tailscale Funnel
+
+Recommended for a permanent, zero-maintenance HTTPS domain backed by Tailscale's MagicDNS.
+
+### Prerequisites (One-time)
+1. **Daemon running:** `tailscaled` active and logged in (`tailscale status`).
+2. **Grant operator permissions** (avoids needing `sudo` for funnel commands):
+   ```bash
+   sudo tailscale set --operator=$USER
+   ```
+3. **Enable Funnel:** Tailscale Admin Console requires a one-time approval per machine.
+
+### First-Run Walkthrough & Troubleshooting
+
+When you first start the tunnel:
+```bash
+pod tunnel tailscale start
+```
+
+Tailscale will prompt you to approve Funnel access in your browser:
+```
+Starting tailscale tunnel on port 8000...
+
+Funnel is not enabled on your tailnet.
+To enable, visit:
+
+         https://login.tailscale.com/f/funnel?node=nbd9nUyQxR11CNTRL
+
+Success.
+```
+
+If you see:
+```
+sending serve config: Access denied: serve config denied
+
+Use 'sudo tailscale funnel --bg --yes 8000'.
+To not require root, use 'sudo tailscale set --operator=$USER' once.
+Failed to start tailscale tunnel.
+```
+**Fix:** Run `sudo tailscale set --operator=$USER` once, then re-run `pod tunnel tailscale start`.
+
+### Starting the Tunnel
+```bash
+# Via pod CLI
+pod tunnel tailscale start
+# (or: pod tunnel start tailscale)
+
+# Or raw CLI
+tailscale funnel --bg 8000
+```
+
+### Connector URL
+- **MCP Endpoint:** `https://archlinux-1.tailec1c03.ts.net/mcp`
+- **OAuth Discovery:** `https://archlinux-1.tailec1c03.ts.net/.well-known/oauth-authorization-server`
+
+---
+
+## Stopping Tunnels
 
 ```bash
-# URL (may not work + changes URL each time)
-ngrok http 8000
+# Stop specific provider
+pod tunnel tailscale stop
+pod tunnel ngrok stop
 
-ngrok http 8000 --url=<your-domain>.ngrok-free.dev
+# Stop all running tunnels
+pod tunnel stop
 ```
-
-### Tunnel OAuth (optional)
-
-`pod tunnel setup` writes an ngrok traffic policy that requires Google login and
-allow-lists one email. That is a browser gate at the proxy, not MCP OAuth.
-
-To skip it and let pods handle authentication itself (see
-[OAuth.md](OAuth.md)):
-
-```bash
-pod tunnel setup --no-oauth
-pod tunnel start
-```
-
-The named domain is still required — OAuth client registrations and redirect
-URIs are bound to it. `pod tunnel status` reports which mode is active.
-
-### Claude Web
-
-Add a connector in Claude Web:
-
-- _**Settings > Connectors > Add Connector**_
-- Name: `pods`
-- Server URL: `https://<your-domain>.ngrok-free.dev/sse` (or the ephemeral URL)
-- Save
-
-### Caveats
-
-- **Free tier** shows an interstitial page in browsers (click-through required)
-- **AI tools** cannot bypass the interstitial — they need `ngrok-skip-browser-warning` header which most don't support
-- **MCP protocol** bypasses the interstitial automatically (no browser involved)
-- **Paid tier** removes the interstitial entirely
-
-## Deployment Options
-
-For Phases 1 and 2 (SQLite), no external DB is needed — just the Python server.
-
-### 1. Tunnel (Free, Manual)
-
-- **Cloudflare Tunnel** (recommended) — free, no interstitial, works with any AI tool out of the box
-- **ngrok** — free tier has interstitial that blocks AI tools, paid tier removes it
-- No port forwarding, no router config
-- Your machine must be on — tunnel dies when laptop closes
-
-### 2. VPS (Paid, Always-On)
-
-- Your server runs 24/7, public IP, real domain
-- No third-party dependency
-- Hetzner is cheapest, popular in self-host community
-- Enables always-on MCP connectors without restarting tunnels
-
-## Troubleshooting
-
-| Symptom                       | Fix                                                   |
-| ----------------------------- | ----------------------------------------------------- |
-| Server won't start            | Check `.venv/bin/python` exists, activate venv        |
-| ngrok fails                   | Run `ngrok config add-authtoken <token>` first        |
-| cloudflared not found         | Install it — `sudo pacman -S cloudflared` on Arch     |
-| "Connection refused"          | Ensure server is running before starting tunnel       |
-| Tools not showing in Claude   | Verify URL ends with `/sse`, check connector settings |
-| Tools not showing in OpenCode | Verify `command` path is absolute & restart OpenCode  |
-| Browser shows interstitial    | Switch to Cloudflare Tunnel (no interstitial)         |
-| Tunnel URL changed            | Update Claude Web connector with the new URL          |

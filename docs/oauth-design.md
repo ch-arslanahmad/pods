@@ -25,6 +25,13 @@ Claude / ChatGPT / Gemini
 
 Architectural decisions and trade-offs are documented in [ADR 0002](adr/0002-embedded-oauth-persistence.md) (Embedded OAuth) and [ADR 0003](adr/0003-tailscale-funnel-ingress.md) (Tailscale Funnel Ingress).
 
+## Commands
+
+```bash
+pod revoke [client] # this revokes codes + tokens + grants of the client
+
+```
+
 ## Decisions
 
 - **Client registration:** Pre-registered confidential clients. Static `client_id` and `client_secret` pairs stored locally in SQLite (`as_clients`) and entered into Claude Web, ChatGPT, and Gemini's connector setup UI. No DCR (`/register`) endpoint and no external CIMD fetch required.
@@ -69,28 +76,46 @@ Architectural decisions and trade-offs are documented in [ADR 0002](adr/0002-emb
 - Redirect allowlist: six app-specific URIs `https://oauth-redirect.googleusercontent.com/r/<app-id>-<domain>` + `/a/…` variants. Never wildcard.
 - **Never rotate refresh tokens** (persistent linking). RFC 7009 `/revoke` honoured if configured.
 
-## Open work (documented gaps = the actual job)
+## Implementation status
 
-Not yet implemented / not yet in pods (in priority order):
+### Done
+- **AS persistence schema (Migration 005):** `as_owner`, `as_sessions`, `as_clients`, `as_codes`, `as_grants`, `as_tokens` created in `pods.db`. Static clients (`claude`, `chatgpt`, `gemini`) seeded with SHA-256 hashed secrets; owner seeded with Argon2id hash.
+- **Crypto & PKCE layer (`auth/core.py`):** PKCE `S256` verification, token generation, SHA-256 hashing, and password hashing/verification with scrypt and per-row salt. Unit-tested (100% pass).
+- **Storage layer (`auth/storage.py`):** Focused strictly on the 4 core OAuth protocol tables without extra session-cookie or grant-auditing code overhead:
+  1. `as_owner`: `get_owner()`, `set_owner()`
+  2. `as_clients`: `get_client()`
+  3. `as_codes`: `save_code()`, `consume_code()` (atomic single-use via `DELETE ... RETURNING *`)
+  4. `as_tokens`: `save_token()`, `get_token()`, `update_refresh_token_expiry()`, `revoke_client()`, `revoke_token()`, plus `clear_storage()` with live DB guard.
+- **OAuth endpoints (`auth/endpoints.py`):**
+  1. AS metadata (`/.well-known/oauth-authorization-server` & `/.well-known/openid-configuration`)
+  2. PRM metadata (`/.well-known/oauth-protected-resource`)
+  3. `/oauth/authorize` (GET consent page + POST password verify, PKCE challenge binding, single-use code minting, 302 redirect)
+  4. `/oauth/token` (Basic Auth & body client auth, PKCE verification, atomic `consume_code`, 1h access token + 30d refresh token, sliding refresh window)
+  5. `/revoke` and `/oauth/revoke` (RFC 7009 token revocation, client cascade on refresh token revoke, returns 200)
+  6. Single-page consent UI (`auth/templates/authorize.html`) with dynamic client favicons, dark/light theme toggle, and error banner re-render.
+- **Application wiring & protection (`api.py`):**
+  1. Starlette app mounted at root (`Mount("/", app=auth_app)`).
+  2. `OAuthProtectionMiddleware` enforces RFC 9728 401 challenge on `/mcp` with `WWW-Authenticate` header.
+  3. Valid tokens attach caller identity (`request.state.client_id`) for provenance tracking.
+- **Test suite (`auth/tests/`):** Unit and integration test suite (`test_oauth_core.py`, `test_oauth_endpoints.py`) covering complete flow (16/16 tests passing).
+- **Modular tunnel ingress (`tunnel.py`):** Multi-provider tunnel architecture supporting both Ngrok (reserved domain) and Tailscale Funnel (`*.ts.net`) with live status/login checks and first-class CLI groups (`pod tunnel [start|stop|setup|status] <provider>`).
 
-1. AS persistence schema in `pods.db`: `as_owner`, `as_sessions`, `as_clients`, `as_codes`, `as_grants`, `as_tokens`. Migration 005.
-2. `127.0.0.1:8000` bind; systemd user service for pods; Tailscale Funnel unit; `Pod migrate` + restart path.
-3. `/authorize` + consent POST (argon2 verify, CSRF, session cookie); rate limiting on `/authorize` `/token` `/revoke`.
-4. Client storage: seed `as_clients` with pre-registered static clients (Claude, ChatGPT, Gemini) and validate credentials on `/token`. No open `/register` endpoint.
-5. PRM + AS metadata endpoints; 401 challenge with `WWW-Authenticate`; scope-guarded tool dispatch (`pods:read` vs `pods:write`).
-6. ChatGPT-specific `_meta.securitySchemes` + runtime `_meta["mcp/www_authenticate"]` wiring.
-7. `pod revoke --client …` CLI; documented GUI path (later).
-8. End-to-end per-platform connect test; restart survival test (laptop closed → reopen → `pods_ping` without re-consent).
+### In progress / Open work (in priority order)
+1. `pod revoke --client …` CLI command.
+2. ChatGPT-specific `_meta.securitySchemes` + runtime `_meta["mcp/www_authenticate"]` wiring.
+3. End-to-end per-platform connect test; restart survival test (laptop closed → reopen → `pods_ping` without re-consent).
 
 ## Requirements
 
 ### Functional
+
 - **Auth Flow:** OAuth 2.1 Authorization Code + PKCE (`S256`).
 - **Endpoints:** Metadata (`/.well-known/...`), `/authorize` (login + consent), `/token` (exchange + refresh), `/revoke` (RFC 7009).
 - **Gatekeeper:** 401 challenge on unauthenticated `/mcp` requests.
 - **Revocation:** Per-client CLI command (`pod revoke --client <name>`).
 
 ### Non-Functional
+
 - **Single-User:** 1 owner password (Argon2); zero multi-tenant overhead.
 - **Zero Latency:** In-process SQLite token lookups (<1ms).
 - **Restart Survival:** Tokens and sessions survive laptop reboots without re-consent.

@@ -10,7 +10,7 @@ A scoped semantic memory system I actually use daily with my AI tools. Not a pro
 | ------------------------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | **Phase 1: Foundation**        | `status` (hardcoded), `server` group (stubs)           | Implement `server --local`, `server start`, `status` real check, `config` commands, make installable |
 | **Phase 2: Server Management** | `stop`, `restart`, `install`, `uninstall` (all `pass`) | Implement subprocess management, systemd integration                                                 |
-| **Phase 3: Tunnel Support**    | Nothing                                                | `tunnel start/stop/status`, detect cloudflared/ngrok                                                 |
+| **Phase 3: Tunnel Support**    | `tunnel start/stop/status/list`, ngrok + tailscale | Done                                                                 |
 | **Phase 4: Future**            | Nothing                                                | Pod CRUD, logs, doctor, cross-platform                                                               |
 
 **Current state:** MCP server works (8 tools, REST API, migrations). CLI is a skeleton - doesn't manage anything yet.
@@ -137,8 +137,8 @@ Don't create a file per command. Keep small commands in the entry point. Split o
 
 **What changes:**
 
-- Add tunnel (Cloudflare or ngrok) to expose server to internet
-- CLI detects tunnel and shows URL in `pods status`
+- Add tunnel (ngrok or Tailscale Funnel) to expose server to internet
+- CLI detects tunnel and shows URL in `pod tunnel status`
 - Claude Web connects via tunnel URL
 
 **New CLI commands:** See [features.md](features.md#tunnel-support).

@@ -96,8 +96,8 @@ Canonical location for each topic — check here before searching the repo:
 | Feature ideas | `features.md` |
 | Build plan | `PLAN.md` |
 | Running modes, tests, migrations | `docs/development.md` |
-| Tunnels (cloudflared/ngrok), Claude Web, REST API | `docs/deployment.md` |
-| OAuth concepts, MCP auth flow, auth design | `docs/OAuth.md` |
+| Tunnels (ngrok/tailscale), Claude Web, REST API | `docs/deployment.md` |
+| OAuth 2.1 design, specs, and status | `docs/oauth-design.md` |
 | Install/dependency issues | `docs/troubleshooting.md` |
 | Pydantic/FastMCP learnings | `docs/learning.md` |
 | North-star product spec | `docs/pods.md` |
